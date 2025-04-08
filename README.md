@@ -1,4 +1,4 @@
-# eBay Card Pricer API
+# Card Pricer API
 
 This API helps predict the value of sports cards by analyzing recent eBay sales data.
 
