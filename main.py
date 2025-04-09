@@ -180,7 +180,7 @@ def predict_price(sales_data: List[dict], active_listings: List[dict]) -> tuple[
 @app.get("/card-price", response_model=CardPriceResponse)
 async def get_card_price(
     brand: str,
-    set: str,
+    set_name: str,
     year: str,
     player_name: Optional[str] = None,
     card_number: Optional[str] = None,
@@ -192,58 +192,76 @@ async def get_card_price(
     oauth_token = get_ebay_oauth_token()
     
     # Build search query
-    query = build_search_query(brand, set, year, player_name, card_number, card_variation)
+    query = build_search_query(brand, set_name, year, player_name, card_number, card_variation)
+    print(f"Search query: {query}")  # Debug log
     
-    # Calculate date range (last 1 year)
+    # Calculate date range (last 90 days, which is the maximum allowed by eBay)
     end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=365)
+    start_date = end_date - timedelta(days=90)
+    
+    # Format dates in ISO 8601 UTC format
+    start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     
     # Prepare eBay API request for sold items
     sold_url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
     headers = {
         "Authorization": f"Bearer {oauth_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY-US"
     }
+    
+    # Build the filter for completed/sold items with date range
     sold_params = {
         "q": query,
-        "filter": f"soldItems,endDate:[{start_date.isoformat()}..{end_date.isoformat()}]",
-        "sort": "endDate",
+        "filter": f"itemEndDate:[{start_date_str}..{end_date_str}]",
+        "sort": "-endDate",  # Most recent first
         "limit": 100
     }
     
-    # Prepare eBay API request for active listings
-    active_params = {
-        "q": query,
-        "filter": "activeItems",
-        "sort": "price",
-        "limit": 100
-    }
+    print(f"Using filter: {sold_params['filter']}")  # Debug log
     
     # Make requests to eBay API
     sold_response = requests.get(sold_url, headers=headers, params=sold_params)
-    active_response = requests.get(sold_url, headers=headers, params=active_params)
+    print(f"Sold items response status: {sold_response.status_code}")  # Debug log
+    print(f"Sold items response: {sold_response.text[:500]}")  # Debug log first 500 chars
     
-    if sold_response.status_code != 200 or active_response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to fetch data from eBay")
+    if sold_response.status_code != 200:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch sold items from eBay: {sold_response.text}")
     
     sold_data = sold_response.json()
-    active_data = active_response.json()
+    print(f"Number of sold items found: {len(sold_data.get('itemSummaries', []))}")  # Debug log
     
     # Process sales data
     sales_data = []
     for item in sold_data.get("itemSummaries", []):
-        if "price" in item and "soldDate" in item:
+        if "price" in item:
+            print(f"Found sold item: {item.get('title')} - ${item['price']['value']}")  # Debug log
             sales_data.append({
-                "sale_date": item["soldDate"],
+                "sale_date": item.get("itemEndDate", item.get("soldDate", "Unknown")),
                 "price": float(item["price"]["value"]),
                 "condition": item.get("condition", "Unknown")
             })
+    
+    # Now get active listings
+    active_params = {
+        "q": query,
+        "filter": "buyingOptions:{FIXED_PRICE|AUCTION}",  # Include both Buy It Now and Auction listings
+        "sort": "price",
+        "limit": 100
+    }
+    
+    active_response = requests.get(sold_url, headers=headers, params=active_params)
+    if active_response.status_code != 200:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch active listings from eBay: {active_response.text}")
+    
+    active_data = active_response.json()
     
     # Process active listings data
     active_listings = []
     for item in active_data.get("itemSummaries", []):
         if "price" in item:
-            listing_type = "buy_it_now" if item.get("buyingOptions", []) == ["FIXED_PRICE"] else "auction"
+            listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
             active_listings.append({
                 "price": float(item["price"]["value"]),
                 "condition": item.get("condition", "Unknown"),
@@ -262,4 +280,4 @@ async def get_card_price(
         recent_sales=[Sale(**sale) for sale in sales_data],
         active_listings=[ActiveListing(**listing) for listing in active_listings],
         market_analysis=market_analysis
-    ) 
+    )
