@@ -1,44 +1,15 @@
-import requests
-import pandas as pd
-import os
+import asyncio
+from main import process_cards_from_csv
 
-def upload_csv_to_api(csv_path):
-    """Upload the CSV file to the API endpoint"""
-    url = 'http://localhost:8000/process-cards-csv'
-    
-    # Open the file in binary mode
-    with open(csv_path, 'rb') as f:
-        files = {'file': ('card-prices.csv', f, 'text/csv')}
-        response = requests.post(url, files=files)
-    
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Save the response as a CSV file
-        output_path = 'card_predictions.csv'
-        with open(output_path, 'wb') as f:
-            f.write(response.content)
-        print(f"Success! Predictions saved to {output_path}")
-        
-        # Display the predictions
-        predictions_df = pd.read_csv(output_path)
-        print("\nPredictions:")
-        print(predictions_df.to_string())
-    else:
-        print(f"Error: {response.status_code}")
-        print(response.text)
-
-def main():
-    csv_path = 'card-prices.csv'
-    
-    if not os.path.exists(csv_path):
-        print(f"Error: {csv_path} not found in the current directory")
-        return
-    
-    print(f"Using existing CSV file: {csv_path}")
-    
-    # Upload to API
-    print("\nUploading to API...")
-    upload_csv_to_api(csv_path)
+async def main():
+    results = await process_cards_from_csv('card_inventory.csv', 'card_prices.csv')
+    print(f"Processed {results['total_cards']} cards")
+    print(f"Successful: {results['successful']}")
+    print(f"Failed: {results['failed']}")
+    if results['errors']:
+        print("Errors:")
+        for error in results['errors']:
+            print(f"  - {error}")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main())

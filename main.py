@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 import numpy as np
 from dotenv import load_dotenv
+import csv
 
 # Load environment variables
 load_dotenv()
@@ -46,6 +47,16 @@ class CardPriceResponse(BaseModel):
     recent_sales: List[Sale]
     active_listings: List[ActiveListing]
     market_analysis: dict
+
+class GoogleSheetsResponse(BaseModel):
+    success: bool
+    message: str
+    row_number: Optional[int] = None
+
+class CSVResponse(BaseModel):
+    success: bool
+    message: str
+    file_path: str
 
 def get_ebay_oauth_token():
     """Get OAuth token from eBay"""
@@ -423,3 +434,212 @@ async def get_card_price(
         active_listings=[ActiveListing(**listing) for listing in active_listings],
         market_analysis=market_analysis
     )
+
+@app.post("/write-to-sheets", response_model=GoogleSheetsResponse)
+async def write_to_sheets(
+    brand: str,
+    set_name: str,
+    year: str,
+    condition: Optional[str] = None,
+    player_name: Optional[str] = None,
+    card_number: Optional[str] = None,
+    card_variation: Optional[str] = None
+):
+    try:
+        # Get card price data
+        price_data = await get_card_price(
+            brand=brand,
+            set_name=set_name,
+            year=year,
+            condition=condition,
+            player_name=player_name,
+            card_number=card_number,
+            card_variation=card_variation
+        )
+        
+        # Prepare data for Google Sheets
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row_data = [
+            current_time,
+            brand,
+            set_name,
+            year,
+            condition or "N/A",
+            player_name or "N/A",
+            card_number or "N/A",
+            card_variation or "N/A",
+            str(price_data.predicted_price),
+            str(price_data.confidence_score),
+            str(len(price_data.recent_sales)),
+            str(len(price_data.active_listings))
+        ]
+        
+        # Get Google Sheets service
+        service = get_google_sheets_service()
+        
+        # Append data to the spreadsheet
+        result = service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range='Sheet1!A:L',  # Adjust range based on your columns
+            valueInputOption='RAW',
+            insertDataOption='INSERT_ROWS',
+            body={'values': [row_data]}
+        ).execute()
+        
+        return GoogleSheetsResponse(
+            success=True,
+            message="Successfully wrote to Google Sheets",
+            row_number=result.get('updates', {}).get('updatedRange', '').split('!')[1]
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to write to Google Sheets: {str(e)}"
+        )
+
+@app.get("/write-to-csv", response_model=CSVResponse)
+async def write_to_csv(
+    brand: str,
+    set_name: str,
+    year: str,
+    condition: Optional[str] = None,
+    player_name: Optional[str] = None,
+    card_number: Optional[str] = None,
+    card_variation: Optional[str] = None
+):
+    try:
+        # Get card price data
+        price_data = await get_card_price(
+            brand=brand,
+            set_name=set_name,
+            year=year,
+            condition=condition,
+            player_name=player_name,
+            card_number=card_number,
+            card_variation=card_variation
+        )
+        
+        # Prepare data for CSV
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row_data = {
+            'timestamp': current_time,
+            'brand': brand,
+            'set_name': set_name,
+            'year': year,
+            'condition': condition or "N/A",
+            'player_name': player_name or "N/A",
+            'card_number': card_number or "N/A",
+            'card_variation': card_variation or "N/A",
+            'predicted_price': str(price_data.predicted_price),
+            'confidence_score': str(price_data.confidence_score),
+            'recent_sales_count': str(len(price_data.recent_sales)),
+            'active_listings_count': str(len(price_data.active_listings)),
+            'market_trend': price_data.market_analysis['market_trend'],
+            'supply_level': price_data.market_analysis['supply_level'],
+            'price_trend': price_data.market_analysis['price_trend']
+        }
+        
+        # Define CSV file path
+        csv_file = 'card_prices.csv'
+        file_exists = os.path.exists(csv_file) and os.path.getsize(csv_file) > 0
+        
+        # Write to CSV
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=row_data.keys())
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(row_data)
+        
+        return CSVResponse(
+            success=True,
+            message="Successfully wrote to CSV file",
+            file_path=csv_file
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to write to CSV: {str(e)}"
+        )
+
+async def process_cards_from_csv(input_csv_path: str, output_csv_path: str = 'card_prices.csv') -> dict:
+    """
+    Process multiple cards from an input CSV file and write results to an output CSV file.
+    
+    Args:
+        input_csv_path (str): Path to the input CSV file containing card details
+        output_csv_path (str): Path to write the results (default: 'card_prices.csv')
+    
+    Returns:
+        dict: Summary of processing results including success count and any errors
+    """
+    results = {
+        'total_cards': 0,
+        'successful': 0,
+        'failed': 0,
+        'errors': []
+    }
+    
+    try:
+        # Read input CSV
+        with open(input_csv_path, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            cards = list(reader)
+        
+        results['total_cards'] = len(cards)
+        
+        # Process each card
+        for card in cards:
+            try:
+                # Get card price data
+                price_data = await get_card_price(
+                    brand=card['brand'],
+                    set_name=card['set_name'],
+                    year=card['year'],
+                    condition=card.get('condition'),
+                    player_name=card.get('player_name'),
+                    card_number=card.get('card_number'),
+                    card_variation=card.get('card_variation')
+                )
+                
+                # Prepare data for CSV
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                row_data = {
+                    'timestamp': current_time,
+                    'brand': card['brand'],
+                    'set_name': card['set_name'],
+                    'year': card['year'],
+                    'condition': card.get('condition', 'N/A'),
+                    'player_name': card.get('player_name', 'N/A'),
+                    'card_number': card.get('card_number', 'N/A'),
+                    'card_variation': card.get('card_variation', 'N/A'),
+                    'predicted_price': str(price_data.predicted_price),
+                    'confidence_score': str(price_data.confidence_score),
+                    'recent_sales_count': str(len(price_data.recent_sales)),
+                    'active_listings_count': str(len(price_data.active_listings)),
+                    'market_trend': price_data.market_analysis['market_trend'],
+                    'supply_level': price_data.market_analysis['supply_level'],
+                    'price_trend': price_data.market_analysis['price_trend']
+                }
+                
+                # Write to CSV
+                file_exists = os.path.exists(output_csv_path) and os.path.getsize(output_csv_path) > 0
+                with open(output_csv_path, 'a', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=row_data.keys())
+                    if not file_exists:
+                        writer.writeheader()
+                    writer.writerow(row_data)
+                
+                results['successful'] += 1
+                
+            except Exception as e:
+                results['failed'] += 1
+                error_msg = f"Error processing card {card.get('player_name', 'Unknown')} {card.get('card_number', 'Unknown')}: {str(e)}"
+                results['errors'].append(error_msg)
+                print(error_msg)  # Print error for immediate feedback
+        
+        return results
+        
+    except Exception as e:
+        raise Exception(f"Failed to process cards from CSV: {str(e)}")
