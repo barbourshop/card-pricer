@@ -60,7 +60,8 @@ def get_ebay_oauth_token():
 def build_search_query(brand: str, set_name: str, year: str, 
                       player_name: Optional[str] = None,
                       card_number: Optional[str] = None,
-                      card_variation: Optional[str] = None) -> str:
+                      card_variation: Optional[str] = None,
+                      condition: str = None) -> str:
     """Build eBay search query from card details"""
     query_parts = [f"{brand} {set_name} {year}"]
     
@@ -182,6 +183,7 @@ async def get_card_price(
     brand: str,
     set_name: str,
     year: str,
+    condition: Optional[str] = None,
     player_name: Optional[str] = None,
     card_number: Optional[str] = None,
     card_variation: Optional[str] = None
@@ -212,9 +214,13 @@ async def get_card_price(
     }
     
     # Build the filter for completed/sold items with date range
+    sold_filter = f"itemEndDate:[{start_date_str}..{end_date_str}]"
+    if condition:
+        sold_filter += f",conditions:{{{condition}}}"
+    
     sold_params = {
         "q": query,
-        "filter": f"itemEndDate:[{start_date_str}..{end_date_str}]",
+        "filter": sold_filter,
         "sort": "-endDate",  # Most recent first
         "limit": 100
     }
@@ -244,9 +250,13 @@ async def get_card_price(
             })
     
     # Now get active listings
+    active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
+    if condition:
+        active_filter += f",conditions:{{{condition}}}"
+    
     active_params = {
         "q": query,
-        "filter": "buyingOptions:{FIXED_PRICE|AUCTION}",  # Include both Buy It Now and Auction listings
+        "filter": active_filter,
         "sort": "price",
         "limit": 100
     }
