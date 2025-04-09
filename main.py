@@ -216,7 +216,21 @@ async def get_card_price(
     # Build the filter for completed/sold items with date range
     sold_filter = f"itemEndDate:[{start_date_str}..{end_date_str}]"
     if condition:
-        sold_filter += f",conditions:{{{condition}}}"
+        # Map condition names to eBay condition values
+        condition_map = {
+            "New": "NEW",
+            "Like New": "NEW_OTHER",
+            "Excellent": "USED_EXCELLENT",
+            "Very Good": "USED_VERY_GOOD",
+            "Good": "USED_GOOD",
+            "Acceptable": "USED_ACCEPTABLE",
+            "For Parts": "FOR_PARTS",
+            "Ungraded": "UNGRADED",
+            "Graded": "GRADED"
+        }
+        condition_value = condition_map.get(condition)
+        if condition_value:
+            sold_filter += f",itemCondition:{{{condition_value}}}"
     
     sold_params = {
         "q": query,
@@ -225,7 +239,7 @@ async def get_card_price(
         "limit": 100
     }
     
-    print(f"Using filter: {sold_params['filter']}")  # Debug log
+    print(f"Using sold items filter: {sold_params['filter']}")  # Debug log
     
     # Make requests to eBay API
     sold_response = requests.get(sold_url, headers=headers, params=sold_params)
@@ -242,17 +256,28 @@ async def get_card_price(
     sales_data = []
     for item in sold_data.get("itemSummaries", []):
         if "price" in item:
-            print(f"Found sold item: {item.get('title')} - ${item['price']['value']}")  # Debug log
-            sales_data.append({
-                "sale_date": item.get("itemEndDate", item.get("soldDate", "Unknown")),
-                "price": float(item["price"]["value"]),
-                "condition": item.get("condition", "Unknown")
-            })
+            print(f"Found sold item: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
+            # Get the sale date from itemEndDate, which is when the auction/sale ended
+            sale_date = item.get("itemEndDate")
+            if not sale_date:
+                # Fallback to soldDate if itemEndDate is not available
+                sale_date = item.get("soldDate")
+            
+            # If both dates are None, use current date as fallback
+            if not sale_date:
+                sale_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            
+            # Only include items with the specified condition
+            item_condition = item.get("condition", "Unknown")
+            if condition is None or item_condition == condition:
+                sales_data.append({
+                    "sale_date": sale_date,
+                    "price": float(item["price"]["value"]),
+                    "condition": item_condition
+                })
     
     # Now get active listings
     active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
-    if condition:
-        active_filter += f",conditions:{{{condition}}}"
     
     active_params = {
         "q": query,
@@ -261,22 +286,30 @@ async def get_card_price(
         "limit": 100
     }
     
+    print(f"Using active listings filter: {active_params['filter']}")  # Debug log
+    
     active_response = requests.get(sold_url, headers=headers, params=active_params)
     if active_response.status_code != 200:
         raise HTTPException(status_code=500, detail=f"Failed to fetch active listings from eBay: {active_response.text}")
     
     active_data = active_response.json()
+    print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
     
     # Process active listings data
     active_listings = []
     for item in active_data.get("itemSummaries", []):
         if "price" in item:
+            print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
             listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
-            active_listings.append({
-                "price": float(item["price"]["value"]),
-                "condition": item.get("condition", "Unknown"),
-                "listing_type": listing_type
-            })
+            
+            # Only include items with the specified condition
+            item_condition = item.get("condition", "Unknown")
+            if condition is None or item_condition == condition:
+                active_listings.append({
+                    "price": float(item["price"]["value"]),
+                    "condition": item_condition,
+                    "listing_type": listing_type
+                })
     
     # Get market analysis
     market_analysis = analyze_market(sales_data, active_listings)
