@@ -17,6 +17,19 @@ EBAY_APP_ID = os.getenv("EBAY_APP_ID")
 EBAY_CERT_ID = os.getenv("EBAY_CERT_ID")
 EBAY_DEV_ID = os.getenv("EBAY_DEV_ID")
 
+# Keywords to exclude from listings
+EXCLUDED_KEYWORDS = [
+    "lot",
+    "complete your set",
+    "you pick",
+    "u pick",
+    "pick your",
+    "complete set",
+    "bulk",
+    "pick a card",
+    "pick your card"
+]
+
 class Sale(BaseModel):
     sale_date: str
     price: float
@@ -178,6 +191,64 @@ def predict_price(sales_data: List[dict], active_listings: List[dict]) -> tuple[
     
     return round(predicted_price, 2), round(confidence, 2)
 
+def filter_price_outliers(items: List[dict], price_key: str = "price") -> List[dict]:
+    """Filter out extreme price outliers using the IQR method"""
+    if not items or len(items) < 4:  # Need at least 4 items for meaningful outlier detection
+        return items
+    
+    # Extract prices
+    prices = [item[price_key] for item in items]
+    
+    # Calculate Q1, Q3 and IQR
+    q1 = np.percentile(prices, 25)
+    q3 = np.percentile(prices, 75)
+    iqr = q3 - q1
+    
+    # Define bounds for outliers (1.5 is a common multiplier for IQR method)
+    lower_bound = q1 - (1.5 * iqr)
+    upper_bound = q3 + (1.5 * iqr)
+    
+    # Filter out outliers
+    filtered_items = [item for item in items if lower_bound <= item[price_key] <= upper_bound]
+    
+    # If we filtered out more than 50% of items, the bounds might be too tight
+    # In this case, use a more lenient multiplier (2.5)
+    if len(filtered_items) < len(items) * 0.5:
+        lower_bound = q1 - (2.5 * iqr)
+        upper_bound = q3 + (2.5 * iqr)
+        filtered_items = [item for item in items if lower_bound <= item[price_key] <= upper_bound]
+    
+    # Print debug information about filtered items
+    print(f"\nFiltered out {len(items) - len(filtered_items)} price outliers")
+    print(f"Price bounds: ${lower_bound:.2f} - ${upper_bound:.2f}")
+    for item in items:
+        if item[price_key] < lower_bound or item[price_key] > upper_bound:
+            print(f"  EXCLUDED: {item.get('title', '')} - ${item[price_key]}")
+    
+    return filtered_items
+
+def filter_by_title_keywords(items: List[dict], title_key: str = "title", exclude_keywords: List[str] = None) -> List[dict]:
+    """Filter out items whose titles contain any of the specified keywords"""
+    if not items or not exclude_keywords:
+        return items
+    
+    # Convert keywords to lowercase for case-insensitive matching
+    exclude_keywords = [kw.lower() for kw in exclude_keywords]
+    
+    # Filter out items with matching keywords
+    filtered_items = [
+        item for item in items 
+        if not any(kw in item.get(title_key, "").lower() for kw in exclude_keywords)
+    ]
+    
+    # Print debug information about filtered items
+    print(f"\nFiltered out {len(items) - len(filtered_items)} items with keywords: {exclude_keywords}")
+    for item in items:
+        if any(kw in item.get(title_key, "").lower() for kw in exclude_keywords):
+            print(f"  EXCLUDED: {item.get(title_key, '')} - ${item.get('price', 0)}")
+    
+    return filtered_items
+
 @app.get("/card-price", response_model=CardPriceResponse)
 async def get_card_price(
     brand: str,
@@ -273,8 +344,22 @@ async def get_card_price(
                 sales_data.append({
                     "sale_date": sale_date,
                     "price": float(item["price"]["value"]),
-                    "condition": item_condition
+                    "condition": item_condition,
+                    "title": item.get("title", "")  # Add title to the sales data
                 })
+    
+    # Filter out listings with specific keywords
+    sales_data = filter_by_title_keywords(sales_data, exclude_keywords=EXCLUDED_KEYWORDS)
+    print(f"Number of sales after keyword filtering: {len(sales_data)}")  # Debug log
+    
+    # Filter out price outliers from sales data
+    sales_data = filter_price_outliers(sales_data)
+    print(f"Number of sales after outlier filtering: {len(sales_data)}")  # Debug log
+    
+    # Print remaining sales data
+    print("\nRemaining sales data:")
+    for sale in sales_data:
+        print(f"  {sale.get('title', '')} - ${sale['price']} - {sale['condition']}")
     
     # Now get active listings
     active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
@@ -308,8 +393,22 @@ async def get_card_price(
                 active_listings.append({
                     "price": float(item["price"]["value"]),
                     "condition": item_condition,
-                    "listing_type": listing_type
+                    "listing_type": listing_type,
+                    "title": item.get("title", "")  # Add title to the active listings
                 })
+    
+    # Filter out listings with specific keywords
+    active_listings = filter_by_title_keywords(active_listings, exclude_keywords=EXCLUDED_KEYWORDS)
+    print(f"Number of active listings after keyword filtering: {len(active_listings)}")  # Debug log
+    
+    # Filter out price outliers from active listings
+    active_listings = filter_price_outliers(active_listings)
+    print(f"Number of active listings after outlier filtering: {len(active_listings)}")  # Debug log
+    
+    # Print remaining active listings
+    print("\nRemaining active listings:")
+    for listing in active_listings:
+        print(f"  {listing.get('title', '')} - ${listing['price']} - {listing['condition']} - {listing['listing_type']}")
     
     # Get market analysis
     market_analysis = analyze_market(sales_data, active_listings)
