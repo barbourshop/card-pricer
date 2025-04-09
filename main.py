@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 import numpy as np
 from dotenv import load_dotenv
 import csv
+import asyncio
+import time
+from asyncio import Semaphore
+import aiohttp
+import base64
 
 # Load environment variables
 load_dotenv()
@@ -58,28 +63,63 @@ class CSVResponse(BaseModel):
     message: str
     file_path: str
 
-def get_ebay_oauth_token():
-    """Get OAuth token from eBay"""
-    url = "https://api.ebay.com/identity/v1/oauth2/token"
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {
-        "grant_type": "client_credentials",
-        "scope": "https://api.ebay.com/oauth/api_scope"
-    }
+# Add token caching
+_oauth_token = None
+_token_expiry = None
+_token_lock = asyncio.Lock()
+
+async def get_ebay_oauth_token():
+    """Get eBay OAuth token with caching"""
+    global _oauth_token, _token_expiry
     
-    response = requests.post(
-        url,
-        headers=headers,
-        data=data,
-        auth=(EBAY_APP_ID, EBAY_CERT_ID)
-    )
+    async with _token_lock:
+        # Check if we have a valid cached token
+        if _oauth_token and _token_expiry and datetime.now() < _token_expiry:
+            return _oauth_token
+            
+        # Get new token
+        auth_string = f"{EBAY_APP_ID}:{EBAY_CERT_ID}"
+        auth_bytes = auth_string.encode('ascii')
+        base64_auth = base64.b64encode(auth_bytes).decode('ascii')
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.ebay.com/identity/v1/oauth2/token",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Authorization": f"Basic {base64_auth}"
+                },
+                data={
+                    "grant_type": "client_credentials",
+                    "scope": "https://api.ebay.com/oauth/api_scope"
+                }
+            ) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=500, detail="Failed to get eBay OAuth token")
+                
+                response_data = await response.json()
+                _oauth_token = response_data["access_token"]
+                # Set token expiry to 1 hour before actual expiry to be safe
+                _token_expiry = datetime.now() + timedelta(seconds=response_data["expires_in"] - 3600)
+                return _oauth_token
+
+# Add rate limiter class
+class RateLimiter:
+    def __init__(self, calls_per_second):
+        self.calls_per_second = calls_per_second
+        self.last_call = 0
+        self.lock = asyncio.Lock()
     
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to get eBay OAuth token")
-    
-    return response.json()["access_token"]
+    async def acquire(self):
+        async with self.lock:
+            now = time.time()
+            time_since_last_call = now - self.last_call
+            if time_since_last_call < 1.0 / self.calls_per_second:
+                await asyncio.sleep(1.0 / self.calls_per_second - time_since_last_call)
+            self.last_call = time.time()
+
+# Create global rate limiter
+rate_limiter = RateLimiter(calls_per_second=2)
 
 def build_search_query(brand: str, set_name: str, year: str, 
                       player_name: Optional[str] = None,
@@ -272,8 +312,8 @@ async def get_card_price(
 ):
     """Get predicted price for a sports card based on recent eBay sales and active listings"""
     
-    # Get OAuth token
-    oauth_token = get_ebay_oauth_token()
+    # Get OAuth token (now cached)
+    oauth_token = await get_ebay_oauth_token()
     
     # Build search query
     query = build_search_query(brand, set_name, year, player_name, card_number, card_variation)
@@ -323,41 +363,43 @@ async def get_card_price(
     
     print(f"Using sold items filter: {sold_params['filter']}")  # Debug log
     
-    # Make requests to eBay API
-    sold_response = requests.get(sold_url, headers=headers, params=sold_params)
-    print(f"Sold items response status: {sold_response.status_code}")  # Debug log
-    print(f"Sold items response: {sold_response.text[:500]}")  # Debug log first 500 chars
+    # Apply rate limiting before making the API call
+    await rate_limiter.acquire()
     
-    if sold_response.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch sold items from eBay: {sold_response.text}")
-    
-    sold_data = sold_response.json()
-    print(f"Number of sold items found: {len(sold_data.get('itemSummaries', []))}")  # Debug log
-    
-    # Process sales data
-    sales_data = []
-    for item in sold_data.get("itemSummaries", []):
-        if "price" in item:
-            print(f"Found sold item: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
-            # Get the sale date from itemEndDate, which is when the auction/sale ended
-            sale_date = item.get("itemEndDate")
-            if not sale_date:
-                # Fallback to soldDate if itemEndDate is not available
-                sale_date = item.get("soldDate")
+    # Make requests to eBay API using aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.get(sold_url, headers=headers, params=sold_params) as response:
+            if response.status != 200:
+                response_text = await response.text()
+                raise HTTPException(status_code=500, detail=f"Failed to fetch sold items from eBay: {response_text}")
             
-            # If both dates are None, use current date as fallback
-            if not sale_date:
-                sale_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            sold_data = await response.json()
+            print(f"Number of sold items found: {len(sold_data.get('itemSummaries', []))}")  # Debug log
             
-            # Only include items with the specified condition
-            item_condition = item.get("condition", "Unknown")
-            if condition is None or item_condition == condition:
-                sales_data.append({
-                    "sale_date": sale_date,
-                    "price": float(item["price"]["value"]),
-                    "condition": item_condition,
-                    "title": item.get("title", "")  # Add title to the sales data
-                })
+            # Process sales data
+            sales_data = []
+            for item in sold_data.get("itemSummaries", []):
+                if "price" in item:
+                    print(f"Found sold item: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
+                    # Get the sale date from itemEndDate, which is when the auction/sale ended
+                    sale_date = item.get("itemEndDate")
+                    if not sale_date:
+                        # Fallback to soldDate if itemEndDate is not available
+                        sale_date = item.get("soldDate")
+                    
+                    # If both dates are None, use current date as fallback
+                    if not sale_date:
+                        sale_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                    
+                    # Only include items with the specified condition
+                    item_condition = item.get("condition", "Unknown")
+                    if condition is None or item_condition == condition:
+                        sales_data.append({
+                            "sale_date": sale_date,
+                            "price": float(item["price"]["value"]),
+                            "condition": item_condition,
+                            "title": item.get("title", "")  # Add title to the sales data
+                        })
     
     # Filter out listings with specific keywords
     sales_data = filter_by_title_keywords(sales_data, exclude_keywords=EXCLUDED_KEYWORDS)
@@ -384,29 +426,35 @@ async def get_card_price(
     
     print(f"Using active listings filter: {active_params['filter']}")  # Debug log
     
-    active_response = requests.get(sold_url, headers=headers, params=active_params)
-    if active_response.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch active listings from eBay: {active_response.text}")
+    # Apply rate limiting before making the API call
+    await rate_limiter.acquire()
     
-    active_data = active_response.json()
-    print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
-    
-    # Process active listings data
-    active_listings = []
-    for item in active_data.get("itemSummaries", []):
-        if "price" in item:
-            print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
-            listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
+    # Make requests to eBay API using aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.get(sold_url, headers=headers, params=active_params) as response:
+            if response.status != 200:
+                response_text = await response.text()
+                raise HTTPException(status_code=500, detail=f"Failed to fetch active listings from eBay: {response_text}")
             
-            # Only include items with the specified condition
-            item_condition = item.get("condition", "Unknown")
-            if condition is None or item_condition == condition:
-                active_listings.append({
-                    "price": float(item["price"]["value"]),
-                    "condition": item_condition,
-                    "listing_type": listing_type,
-                    "title": item.get("title", "")  # Add title to the active listings
-                })
+            active_data = await response.json()
+            print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
+            
+            # Process active listings data
+            active_listings = []
+            for item in active_data.get("itemSummaries", []):
+                if "price" in item:
+                    print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
+                    listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
+                    
+                    # Only include items with the specified condition
+                    item_condition = item.get("condition", "Unknown")
+                    if condition is None or item_condition == condition:
+                        active_listings.append({
+                            "price": float(item["price"]["value"]),
+                            "condition": item_condition,
+                            "listing_type": listing_type,
+                            "title": item.get("title", "")  # Add title to the active listings
+                        })
     
     # Filter out listings with specific keywords
     active_listings = filter_by_title_keywords(active_listings, exclude_keywords=EXCLUDED_KEYWORDS)
@@ -563,13 +611,20 @@ async def write_to_csv(
             detail=f"Failed to write to CSV: {str(e)}"
         )
 
-async def process_cards_from_csv(input_csv_path: str, output_csv_path: str = 'card_prices.csv') -> dict:
+# Modify process_cards_from_csv to use parallel processing
+async def process_cards_from_csv(
+    input_csv_path: str,
+    output_csv_path: str = "card_prices.csv",
+    max_concurrent: int = 5
+):
     """
     Process multiple cards from an input CSV file and write results to an output CSV file.
+    Uses parallel processing with asyncio to speed up processing.
     
     Args:
         input_csv_path (str): Path to the input CSV file containing card details
         output_csv_path (str): Path to write the results (default: 'card_prices.csv')
+        max_concurrent (int): Maximum number of cards to process concurrently (default: 5)
     
     Returns:
         dict: Summary of processing results including success count and any errors
@@ -589,57 +644,116 @@ async def process_cards_from_csv(input_csv_path: str, output_csv_path: str = 'ca
         
         results['total_cards'] = len(cards)
         
-        # Process each card
-        for card in cards:
+        # Process cards in batches
+        batch_size = max_concurrent
+        for i in range(0, len(cards), batch_size):
+            batch = cards[i:i+batch_size]
+            
+            # Create a new event loop for this batch
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
             try:
-                # Get card price data
-                price_data = await get_card_price(
-                    brand=card['brand'],
-                    set_name=card['set_name'],
-                    year=card['year'],
-                    condition=card.get('condition'),
-                    player_name=card.get('player_name'),
-                    card_number=card.get('card_number'),
-                    card_variation=card.get('card_variation')
-                )
+                # Create a semaphore to limit concurrent processing
+                semaphore = asyncio.Semaphore(max_concurrent)
                 
-                # Prepare data for CSV
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                row_data = {
-                    'timestamp': current_time,
-                    'brand': card['brand'],
-                    'set_name': card['set_name'],
-                    'year': card['year'],
-                    'condition': card.get('condition', 'N/A'),
-                    'player_name': card.get('player_name', 'N/A'),
-                    'card_number': card.get('card_number', 'N/A'),
-                    'card_variation': card.get('card_variation', 'N/A'),
-                    'predicted_price': str(price_data.predicted_price),
-                    'confidence_score': str(price_data.confidence_score),
-                    'recent_sales_count': str(len(price_data.recent_sales)),
-                    'active_listings_count': str(len(price_data.active_listings)),
-                    'market_trend': price_data.market_analysis['market_trend'],
-                    'supply_level': price_data.market_analysis['supply_level'],
-                    'price_trend': price_data.market_analysis['price_trend']
-                }
+                # Create a lock for writing to the CSV file
+                csv_lock = asyncio.Lock()
                 
-                # Write to CSV
-                file_exists = os.path.exists(output_csv_path) and os.path.getsize(output_csv_path) > 0
-                with open(output_csv_path, 'a', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=row_data.keys())
-                    if not file_exists:
-                        writer.writeheader()
-                    writer.writerow(row_data)
+                # Define a function to process a single card
+                async def process_card(card):
+                    async with semaphore:
+                        try:
+                            # Get card price data
+                            price_data = await get_card_price(
+                                brand=card['brand'],
+                                set_name=card['set_name'],
+                                year=card['year'],
+                                condition=card.get('condition'),
+                                player_name=card.get('player_name'),
+                                card_number=card.get('card_number'),
+                                card_variation=card.get('card_variation')
+                            )
+                            
+                            # Prepare data for CSV
+                            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            row_data = {
+                                'timestamp': current_time,
+                                'brand': card['brand'],
+                                'set_name': card['set_name'],
+                                'year': card['year'],
+                                'condition': card.get('condition', 'N/A'),
+                                'player_name': card.get('player_name', 'N/A'),
+                                'card_number': card.get('card_number', 'N/A'),
+                                'card_variation': card.get('card_variation', 'N/A'),
+                                'predicted_price': str(price_data.predicted_price),
+                                'confidence_score': str(price_data.confidence_score),
+                                'recent_sales_count': str(len(price_data.recent_sales)),
+                                'active_listings_count': str(len(price_data.active_listings)),
+                                'market_trend': price_data.market_analysis.get('market_trend', 'unknown'),
+                                'supply_level': price_data.market_analysis.get('supply_level', 'unknown'),
+                                'price_trend': price_data.market_analysis.get('price_trend', 'unknown')
+                            }
+                            
+                            # Write to CSV with lock
+                            async with csv_lock:
+                                file_exists = os.path.exists(output_csv_path)
+                                with open(output_csv_path, 'a', newline='') as f:
+                                    writer = csv.DictWriter(f, fieldnames=row_data.keys())
+                                    if not file_exists:
+                                        writer.writeheader()
+                                    writer.writerow(row_data)
+                            
+                            results['successful'] += 1
+                            return row_data
+                            
+                        except Exception as e:
+                            results['failed'] += 1
+                            results['errors'].append({
+                                'card': card,
+                                'error': str(e)
+                            })
+                            return None
                 
-                results['successful'] += 1
+                # Process all cards in the batch concurrently
+                tasks = [process_card(card) for card in batch]
+                loop.run_until_complete(asyncio.gather(*tasks))
                 
-            except Exception as e:
-                results['failed'] += 1
-                error_msg = f"Error processing card {card.get('player_name', 'Unknown')} {card.get('card_number', 'Unknown')}: {str(e)}"
-                results['errors'].append(error_msg)
-                print(error_msg)  # Print error for immediate feedback
+            finally:
+                # Close the event loop
+                loop.close()
         
         return results
         
     except Exception as e:
-        raise Exception(f"Failed to process cards from CSV: {str(e)}")
+        results['errors'].append({
+            'error': str(e)
+        })
+        return results
+
+# Add a new endpoint to process cards in parallel
+@app.post("/process-cards-parallel", response_model=dict)
+async def process_cards_parallel(
+    input_csv_path: str,
+    output_csv_path: str = 'card_prices.csv',
+    max_concurrent: int = 5
+):
+    """
+    Process multiple cards from an input CSV file in parallel and write results to an output CSV file.
+    
+    Args:
+        input_csv_path (str): Path to the input CSV file containing card details
+        output_csv_path (str): Path to write the results (default: 'card_prices.csv')
+        max_concurrent (int): Maximum number of cards to process concurrently (default: 5)
+    
+    Returns:
+        dict: Summary of processing results including success count and any errors
+    """
+    try:
+        results = await process_cards_from_csv(input_csv_path, output_csv_path, max_concurrent)
+        return results
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process cards: {str(e)}"
+        )
