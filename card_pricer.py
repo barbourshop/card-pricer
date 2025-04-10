@@ -334,18 +334,28 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                 print(f"Invalid itemSummaries format: {sold_items}")
                 raise Exception("Invalid itemSummaries format in eBay API response")
             
-            print(f"Found {len(sold_items)} sold items")
+            print(f"\nFound {len(sold_items)} sold items before filtering")
+            print("Initial sold items:")
+            for item in sold_items:
+                title = item.get('title', 'Unknown Title')
+                price = item.get('price', {}).get('value', 0)
+                condition_info = item.get('condition', {})
+                condition_display = condition_info.get('conditionDisplayName', 'Unknown') if isinstance(condition_info, dict) else 'Unknown'
+                print(f"  - {title} - ${price} - Condition: {condition_display}")
             
             # Process sold items with less strict filtering
             sales_data = []
+            filtered_out = []
             for item in sold_items:
                 if not isinstance(item, dict):
                     print(f"Invalid item format: {item}")
+                    filtered_out.append(("Invalid format", item))
                     continue
                 
                 # Skip items with excluded keywords
                 title = item.get('title', '').lower()
                 if any(keyword in title for keyword in ['reprint', 'proxy', 'custom', 'lot', 'bulk']):
+                    filtered_out.append(("Excluded keyword", title))
                     continue
                 
                 # Get sale date
@@ -356,26 +366,80 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                 # Get price safely
                 price_info = item.get('price', {})
                 if not isinstance(price_info, dict):
+                    filtered_out.append(("Invalid price format", item))
                     continue
                 
                 try:
                     price = float(price_info.get('value', 0))
                 except (ValueError, TypeError):
+                    filtered_out.append(("Invalid price value", price_info))
                     continue
                 
                 if price > 0:  # Only include items with valid prices
+                    # Get condition info with detailed logging
                     condition_info = item.get('condition', {})
-                    if not isinstance(condition_info, dict):
-                        condition_info = {}
+                    condition_display = 'Unknown'
+                    condition_id = 'Unknown'
+                    
+                    # Handle both dictionary and string condition formats
+                    if isinstance(condition_info, dict):
+                        condition_display = condition_info.get('conditionDisplayName', 'Unknown')
+                        condition_id = condition_info.get('conditionId', 'Unknown')
+                    elif isinstance(condition_info, str):
+                        condition_display = condition_info
+                        condition_id = condition_info
+                    
+                    print(f"Processing condition for {item.get('title')}:")
+                    print(f"  - Display Name: {condition_display}")
+                    print(f"  - Condition ID: {condition_id}")
+                    
+                    # Filter by condition if specified
+                    if condition:
+                        # Special handling for "Ungraded" and "Graded" conditions
+                        if condition.lower() == "ungraded":
+                            # For "Ungraded", allow any condition that doesn't contain "Graded" or is explicitly "Ungraded"
+                            if "graded" in condition_display.lower() and "ungraded" not in condition_display.lower():
+                                print(f"  - FILTERED: Condition mismatch - Expected: Ungraded, Got: {condition_display}")
+                                filtered_out.append(("Condition mismatch", f"{item.get('title')} - Expected: Ungraded, Got: {condition_display}"))
+                                continue
+                            # If we get here, the condition is acceptable (either "Ungraded" or any other non-graded condition)
+                            print(f"  - KEPT: Condition acceptable for Ungraded search: {condition_display}")
+                        elif condition.lower() == "graded":
+                            # For "Graded", only allow conditions containing "Graded"
+                            if "graded" not in condition_display.lower():
+                                print(f"  - FILTERED: Condition mismatch - Expected: Graded, Got: {condition_display}")
+                                filtered_out.append(("Condition mismatch", f"{item.get('title')} - Expected: Graded, Got: {condition_display}"))
+                                continue
+                            # If we get here, the condition contains "Graded"
+                            print(f"  - KEPT: Condition acceptable for Graded search: {condition_display}")
+                        # For all other conditions, exact match required
+                        elif condition.lower() != condition_display.lower():
+                            print(f"  - FILTERED: Condition mismatch - Expected: {condition}, Got: {condition_display}")
+                            filtered_out.append(("Condition mismatch", f"{item.get('title')} - Expected: {condition}, Got: {condition_display}"))
+                            continue
+                        else:
+                            print(f"  - KEPT: Exact condition match: {condition_display}")
                     
                     sales_data.append({
                         'price': price,
                         'date': sale_date,
-                        'condition': condition_info.get('conditionDisplayName', 'Unknown'),
+                        'condition': condition_display,
+                        'condition_id': condition_id,
                         'title': item.get('title', '')
                     })
+                else:
+                    filtered_out.append(("Zero or negative price", price))
             
-            print(f"After filtering: {len(sales_data)} sales")
+            print(f"\nAfter initial filtering:")
+            print(f"  Kept: {len(sales_data)} sales")
+            print(f"  Filtered out: {len(filtered_out)} items")
+            print("\nFiltered out items:")
+            for reason, item in filtered_out:
+                print(f"  - {reason}: {item}")
+            
+            print("\nKept sales:")
+            for sale in sales_data:
+                print(f"  - {sale['title']} - ${sale['price']} - {sale['condition']}")
             
             # Filter out extreme price outliers (keep more data points)
             if sales_data and len(sales_data) > 2:
@@ -383,77 +447,71 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                 mean_price = statistics.mean(prices)
                 std_dev = statistics.stdev(prices) if len(prices) > 1 else 0
                 # Use 3 standard deviations instead of 2 to keep more data points
-                sales_data = [sale for sale in sales_data if abs(sale['price'] - mean_price) <= 3 * std_dev]
-                print(f"After outlier filtering: {len(sales_data)} sales")
+                outlier_threshold = 3 * std_dev
+                print(f"\nPrice outlier filtering:")
+                print(f"  Mean price: ${mean_price:.2f}")
+                print(f"  Standard deviation: ${std_dev:.2f}")
+                print(f"  Outlier threshold: ±${outlier_threshold:.2f}")
+                
+                filtered_sales = []
+                for sale in sales_data:
+                    if abs(sale['price'] - mean_price) <= outlier_threshold:
+                        filtered_sales.append(sale)
+                    else:
+                        print(f"  - OUTLIER: {sale['title']} - ${sale['price']} (diff: ${abs(sale['price'] - mean_price):.2f})")
+                
+                sales_data = filtered_sales
+                print(f"  After outlier filtering: {len(sales_data)} sales remaining")
+            
+            # Print remaining sales data
+            print("\nRemaining sales data:")
+            for sale in sales_data:
+                print(f"  {sale.get('title', '')} - ${sale['price']} - {sale['condition']}")
             
             # Get active listings with less strict filtering
-            active_url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?q={quote(search_query)}&limit=100"
+            active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
             
-            # Apply rate limiting
+            active_params = {
+                "q": search_query,
+                "filter": active_filter,
+                "sort": "price",
+                "limit": 100
+            }
+            
+            print(f"Using active listings filter: {active_params['filter']}")  # Debug log
+            
+            # Apply rate limiting before making the API call
             await rate_limiter.acquire()
+            
+            # Make requests to eBay API using aiohttp
+            active_url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?q={quote(search_query)}&filter={quote(active_filter)}&limit=100"
             
             async with session.get(active_url, headers=headers) as response:
                 if response.status != 200:
-                    print(f"eBay API error: Status {response.status}")
                     response_text = await response.text()
+                    print(f"eBay API error: Status {response.status}")
                     print(f"Response: {response_text}")
                     raise Exception(f"eBay API call failed with status {response.status}")
                 
-                response_json = await response.json()
-                if not isinstance(response_json, dict):
-                    print(f"Unexpected response format: {response_json}")
-                    raise Exception("Invalid response format from eBay API")
+                active_data = await response.json()
+                print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
                 
-                active_items = response_json.get('itemSummaries', [])
-                if not isinstance(active_items, list):
-                    print(f"Invalid itemSummaries format: {active_items}")
-                    raise Exception("Invalid itemSummaries format in eBay API response")
-                
-                print(f"Found {len(active_items)} active listings")
-                
-                # Process active listings with less strict filtering
+                # Process active listings data
                 active_listings = []
-                for item in active_items:
-                    if not isinstance(item, dict):
-                        print(f"Invalid item format: {item}")
-                        continue
-                    
-                    # Skip items with excluded keywords
-                    title = item.get('title', '').lower()
-                    if any(keyword in title for keyword in ['reprint', 'proxy', 'custom', 'lot', 'bulk']):
-                        continue
-                    
-                    # Get price safely
-                    price_info = item.get('price', {})
-                    if not isinstance(price_info, dict):
-                        continue
-                    
-                    try:
-                        price = float(price_info.get('value', 0))
-                    except (ValueError, TypeError):
-                        continue
-                    
-                    if price > 0:  # Only include items with valid prices
-                        condition_info = item.get('condition', {})
-                        if not isinstance(condition_info, dict):
-                            condition_info = {}
+                for item in active_data.get("itemSummaries", []):
+                    if "price" in item:
+                        print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
+                        listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
                         
-                        active_listings.append({
-                            'price': price,
-                            'condition': condition_info.get('conditionDisplayName', 'Unknown'),
-                            'title': item.get('title', '')
-                        })
-                
-                print(f"After filtering: {len(active_listings)} active listings")
-                
-                # Filter out extreme price outliers (keep more data points)
-                if active_listings and len(active_listings) > 2:
-                    prices = [listing['price'] for listing in active_listings]
-                    mean_price = statistics.mean(prices)
-                    std_dev = statistics.stdev(prices) if len(prices) > 1 else 0
-                    # Use 3 standard deviations instead of 2 to keep more data points
-                    active_listings = [listing for listing in active_listings if abs(listing['price'] - mean_price) <= 3 * std_dev]
-                    print(f"After outlier filtering: {len(active_listings)} active listings")
+                        # Only include items with the specified condition
+                        item_condition = item.get("condition", "Unknown")
+                        if condition is None or item_condition == condition:
+                            active_listings.append({
+                                "price": float(item["price"]["value"]),
+                                "condition": item_condition,
+                                "listing_type": listing_type,
+                                "title": item.get("title", "")  # Add title to the active listings
+                            })
                 
                 # Calculate market metrics
                 if sales_data or active_listings:
@@ -473,7 +531,15 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                         predicted_price = statistics.mean(active_prices)
                         confidence_score = min(0.5, len(active_listings) / 20.0)  # Lower confidence for active-only
                 else:
-                    market_analysis = "Insufficient data for market analysis"
+                    market_analysis = {
+                        "market_trend": "unknown",
+                        "supply_level": "unknown",
+                        "price_trend": "unknown",
+                        "avg_sale_price": 0,
+                        "avg_active_price": 0,
+                        "active_listings_count": 0,
+                        "recent_sales_count": 0
+                    }
                     predicted_price = 0
                     confidence_score = 0
                 
