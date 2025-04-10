@@ -62,6 +62,15 @@ logoutBtn.addEventListener('click', () => {
         });
 });
 
+// Handle collapsible sections
+document.querySelectorAll('.collapsible-btn').forEach(button => {
+    button.addEventListener('click', () => {
+        const content = button.nextElementSibling;
+        content.classList.toggle('active');
+        button.setAttribute('aria-expanded', content.classList.contains('active'));
+    });
+});
+
 // Handle Form Submission
 cardForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -102,17 +111,52 @@ function displayResults(data) {
     resultsSection.classList.remove('hidden');
     
     // Update basic information
-    predictedPriceElement.textContent = `$${data.predictedPrice.toFixed(2)}`;
-    confidenceScoreElement.textContent = `${(data.confidenceScore * 100).toFixed(1)}%`;
-    marketTrendElement.textContent = data.marketTrend;
-    supplyLevelElement.textContent = data.supplyLevel;
-    priceTrendElement.textContent = data.priceTrend;
+    document.getElementById('predicted-price').textContent = `$${data.predictedPrice.toFixed(2)}`;
+    document.getElementById('confidence-score').textContent = `${(data.confidenceScore * 100).toFixed(1)}%`;
+    
+    // Update market analysis
+    document.getElementById('market-trend').textContent = data.marketAnalysis.marketTrend;
+    document.getElementById('supply-level').textContent = data.marketAnalysis.supplyLevel;
+    document.getElementById('price-trend').textContent = data.marketAnalysis.priceTrend;
+    document.getElementById('avg-sale-price').textContent = `$${data.marketAnalysis.avgSalePrice.toFixed(2)}`;
+    document.getElementById('avg-active-price').textContent = `$${data.marketAnalysis.avgActivePrice.toFixed(2)}`;
 
-    // Update recent sales table
-    updateTable(recentSalesTable, data.recentSales);
+    // Update recent sales
+    const recentSalesList = document.getElementById('recent-sales-list');
+    recentSalesList.innerHTML = '';
+    data.recentSales.forEach(sale => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <div class="title">${sale.title}</div>
+            <div class="details">
+                $${sale.price.toFixed(2)} - ${sale.condition}
+                <br>
+                Sold: ${new Date(sale.saleDate).toLocaleDateString()}
+            </div>
+        `;
+        recentSalesList.appendChild(li);
+    });
+    document.querySelector('.collapsible-section:nth-child(1) .count').textContent = `(${data.recentSales.length})`;
 
-    // Update active listings table
-    updateTable(activeListingsTable, data.activeListings);
+    // Update active listings
+    const activeListingsList = document.getElementById('active-listings-list');
+    activeListingsList.innerHTML = '';
+    data.activeListings.forEach(listing => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <div class="title">${listing.title}</div>
+            <div class="details">
+                $${listing.price.toFixed(2)} - ${listing.condition}
+                <br>
+                Type: ${listing.listingType}
+            </div>
+        `;
+        activeListingsList.appendChild(li);
+    });
+    document.querySelector('.collapsible-section:nth-child(2) .count').textContent = `(${data.activeListings.length})`;
+
+    // Show results section
+    document.querySelector('.results-section').style.display = 'block';
 }
 
 // Helper function to update tables

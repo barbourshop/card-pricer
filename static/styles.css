@@ -159,4 +159,213 @@ button:hover {
     #user-info {
         margin-top: 1rem;
     }
+}
+
+.content-layout {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.card-pricing-form {
+    flex: 1;
+    background-color: var(--background-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.results-section {
+    flex: 1;
+    background-color: var(--background-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.compact-form {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.form-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.price-summary {
+    background-color: var(--background-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.predicted-price {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.predicted-price h3 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.market-analysis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.analysis-item {
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.analysis-item .label {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.analysis-item .value {
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.listings-section {
+    margin-top: 1.5rem;
+}
+
+.collapsible-section {
+    margin-bottom: 1rem;
+}
+
+.collapsible-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    text-align: left;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.collapsible-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.collapsible-btn .count {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.collapsible-content {
+    display: none;
+    padding: 1rem;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 4px 4px;
+}
+
+.collapsible-content.active {
+    display: block;
+}
+
+.listings-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.listings-list li {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.listings-list li:last-child {
+    border-bottom: none;
+}
+
+.listings-list .title {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.listings-list .details {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        flex-direction: column;
+    }
+    
+    .form-group {
+        min-width: 100%;
+    }
+    
+    .market-analysis {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 992px) {
+    .content-layout {
+        flex-direction: column;
+    }
+    
+    .card-pricing-form,
+    .results-section {
+        width: 100%;
+    }
+}
+
+.loading, .error {
+    padding: 2rem;
+    text-align: center;
+    font-size: 1.2rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+}
+
+.loading {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.error {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
 } 

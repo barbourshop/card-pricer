@@ -35,53 +35,95 @@
 
         <!-- Main Content Section (hidden by default) -->
         <section id="main-content" style="display: none;">
-            <div class="card-pricing-form">
-                <h2>Card Pricing Form</h2>
-                <form id="pricing-form">
-                    <div class="form-group">
-                        <label for="brand">Brand:</label>
-                        <input type="text" id="brand" name="brand" required placeholder="e.g., Topps, Upper Deck">
-                    </div>
-                    <div class="form-group">
-                        <label for="set_name">Set Name:</label>
-                        <input type="text" id="set_name" name="set_name" required placeholder="e.g., Chrome, Series 1">
-                    </div>
-                    <div class="form-group">
-                        <label for="year">Year:</label>
-                        <input type="text" id="year" name="year" required placeholder="e.g., 2023">
-                    </div>
-                    <div class="form-group">
-                        <label for="player_name">Player Name:</label>
-                        <input type="text" id="player_name" name="player_name" placeholder="e.g., Mike Trout">
-                    </div>
-                    <div class="form-group">
-                        <label for="card_number">Card Number:</label>
-                        <input type="text" id="card_number" name="card_number" placeholder="e.g., 123">
-                    </div>
-                    <div class="form-group">
-                        <label for="card_variation">Card Variation:</label>
-                        <input type="text" id="card_variation" name="card_variation" placeholder="e.g., Refractor, Auto">
-                    </div>
-                    <div class="form-group">
-                        <label for="condition">Condition:</label>
-                        <select id="condition" name="condition" required>
-                            <option value="">Select condition</option>
-                            <option value="mint">Mint</option>
-                            <option value="near-mint">Near Mint</option>
-                            <option value="excellent">Excellent</option>
-                            <option value="good">Good</option>
-                            <option value="light-played">Light Played</option>
-                            <option value="played">Played</option>
-                            <option value="poor">Poor</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn-primary">Get Price</button>
-                </form>
-            </div>
+            <div class="content-layout">
+                <div class="card-pricing-form">
+                    <h2>Card Details</h2>
+                    <form id="pricing-form" class="compact-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="brand">Brand:</label>
+                                <input type="text" id="brand" name="brand" required placeholder="e.g., Topps">
+                            </div>
+                            <div class="form-group">
+                                <label for="set_name">Set Name:</label>
+                                <input type="text" id="set_name" name="set_name" required placeholder="e.g., Chrome">
+                            </div>
+                            <div class="form-group">
+                                <label for="year">Year:</label>
+                                <input type="text" id="year" name="year" required placeholder="e.g., 2023">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="player_name">Player Name:</label>
+                                <input type="text" id="player_name" name="player_name" placeholder="e.g., Mike Trout">
+                            </div>
+                            <div class="form-group">
+                                <label for="card_number">Card Number:</label>
+                                <input type="text" id="card_number" name="card_number" placeholder="e.g., 123">
+                            </div>
+                            <div class="form-group">
+                                <label for="card_variation">Card Variation:</label>
+                                <input type="text" id="card_variation" name="card_variation" placeholder="e.g., Refractor">
+                            </div>
+                            <div class="form-group">
+                                <label for="condition">Condition:</label>
+                                <select id="condition" name="condition" required>
+                                    <option value="">Select condition</option>
+                                    <option value="graded">Graded</option>
+                                    <option value="ungraded">Ungraded</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary">Get Price</button>
+                    </form>
+                </div>
 
-            <div class="results-section" style="display: none;">
-                <h2>Pricing Results</h2>
-                <div id="pricing-results"></div>
+                <div class="results-section" style="display: none;">
+                    <h2>Pricing Results</h2>
+                    <div id="pricing-results">
+                        <div class="price-summary">
+                            <div class="predicted-price">
+                                <h3>Predicted Price: <span id="predicted-price">$0.00</span></h3>
+                                <p>Confidence Score: <span id="confidence-score">0%</span></p>
+                            </div>
+                            <div class="market-analysis">
+                                <div class="analysis-item">
+                                    <span class="label">Market Trend:</span>
+                                    <span id="market-trend" class="value">-</span>
+                                </div>
+                                <div class="analysis-item">
+                                    <span class="label">Supply Level:</span>
+                                    <span id="supply-level" class="value">-</span>
+                                </div>
+                                <div class="analysis-item">
+                                    <span class="label">Price Trend:</span>
+                                    <span id="price-trend" class="value">-</span>
+                                </div>
+                                <div class="analysis-item">
+                                    <span class="label">Average Sale Price:</span>
+                                    <span id="avg-sale-price" class="value">-</span>
+                                </div>
+                                <div class="analysis-item">
+                                    <span class="label">Average Active Price:</span>
+                                    <span id="avg-active-price" class="value">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="sales-data">
+                            <div class="collapsible-section">
+                                <h3>Recent Sales <span class="count"></span></h3>
+                                <ul id="recent-sales-list" class="data-list"></ul>
+                            </div>
+                            
+                            <div class="collapsible-section">
+                                <h3>Active Listings <span class="count"></span></h3>
+                                <ul id="active-listings-list" class="data-list"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <button onclick="signOut()" class="btn-secondary">Sign Out</button>
@@ -152,6 +194,15 @@
                 document.getElementById('user-info').textContent = `Logged in as: ${userData.email}`;
             }
             
+            // Handle collapsible sections
+            document.querySelectorAll('.collapsible-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const content = button.nextElementSibling;
+                    content.classList.toggle('active');
+                    button.setAttribute('aria-expanded', content.classList.contains('active'));
+                });
+            });
+            
             // Add form submission handler
             document.getElementById('pricing-form').addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -174,7 +225,7 @@
                 }
                 
                 // Show loading state
-                document.getElementById('pricing-results').innerHTML = 'Loading...';
+                document.getElementById('pricing-results').innerHTML = '<div class="loading">Loading...</div>';
                 document.querySelector('.results-section').style.display = 'block';
                 
                 // Make API request
@@ -205,31 +256,95 @@
                     return response.json();
                 })
                 .then(data => {
+                    console.log('API Response:', data); // Debug log
                     if (data) {
-                        // Display results
+                        // Make sure the results section is visible
+                        document.querySelector('.results-section').style.display = 'block';
+                        
+                        // Reset the pricing results container
                         document.getElementById('pricing-results').innerHTML = `
-                            <div class="price-result">
-                                <h3>Predicted Price: $${data.predicted_price.toFixed(2)}</h3>
-                                <p>Confidence Score: ${(data.confidence_score * 100).toFixed(1)}%</p>
-                                <h4>Recent Sales:</h4>
-                                <ul>
-                                    ${data.recent_sales.map(sale => `
-                                        <li>$${sale.price.toFixed(2)} - ${sale.condition} (${new Date(sale.sale_date).toLocaleDateString()})</li>
-                                    `).join('')}
-                                </ul>
-                                <h4>Active Listings:</h4>
-                                <ul>
-                                    ${data.active_listings.map(listing => `
-                                        <li>$${listing.price.toFixed(2)} - ${listing.condition} (${listing.listing_type})</li>
-                                    `).join('')}
-                                </ul>
+                            <div class="price-summary">
+                                <div class="predicted-price">
+                                    <h3>Predicted Price: <span id="predicted-price">$${data.predicted_price.toFixed(2)}</span></h3>
+                                    <p>Confidence Score: <span id="confidence-score">${(data.confidence_score * 100).toFixed(1)}%</span></p>
+                                </div>
+                                <div class="market-analysis">
+                                    <div class="analysis-item">
+                                        <span class="label">Market Trend:</span>
+                                        <span id="market-trend" class="value">${data.market_analysis.market_trend}</span>
+                                    </div>
+                                    <div class="analysis-item">
+                                        <span class="label">Supply Level:</span>
+                                        <span id="supply-level" class="value">${data.market_analysis.supply_level}</span>
+                                    </div>
+                                    <div class="analysis-item">
+                                        <span class="label">Price Trend:</span>
+                                        <span id="price-trend" class="value">${data.market_analysis.price_trend}</span>
+                                    </div>
+                                    <div class="analysis-item">
+                                        <span class="label">Average Sale Price:</span>
+                                        <span id="avg-sale-price" class="value">$${data.market_analysis.avg_sale_price.toFixed(2)}</span>
+                                    </div>
+                                    <div class="analysis-item">
+                                        <span class="label">Average Active Price:</span>
+                                        <span id="avg-active-price" class="value">$${data.market_analysis.avg_active_price.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="sales-data">
+                                <div class="collapsible-section">
+                                    <h3>Recent Sales <span class="count">(${data.recent_sales.length})</span></h3>
+                                    <ul id="recent-sales-list" class="data-list"></ul>
+                                </div>
+                                
+                                <div class="collapsible-section">
+                                    <h3>Active Listings <span class="count">(${data.active_listings.length})</span></h3>
+                                    <ul id="active-listings-list" class="data-list"></ul>
+                                </div>
                             </div>
                         `;
+                        
+                        // Update recent sales
+                        const recentSalesList = document.getElementById('recent-sales-list');
+                        if (recentSalesList) {
+                            data.recent_sales.forEach(sale => {
+                                const li = document.createElement('li');
+                                li.innerHTML = `
+                                    <div class="title">${sale.title}</div>
+                                    <div class="details">
+                                        $${sale.price.toFixed(2)} - ${sale.condition}
+                                        <br>
+                                        Sold: ${new Date(sale.date).toLocaleDateString()}
+                                    </div>
+                                `;
+                                recentSalesList.appendChild(li);
+                            });
+                        }
+                        
+                        // Update active listings
+                        const activeListingsList = document.getElementById('active-listings-list');
+                        if (activeListingsList) {
+                            data.active_listings.forEach(listing => {
+                                const li = document.createElement('li');
+                                li.innerHTML = `
+                                    <div class="title">${listing.title}</div>
+                                    <div class="details">
+                                        $${listing.price.toFixed(2)} - ${listing.condition}
+                                        <br>
+                                        Type: ${listing.listing_type}
+                                    </div>
+                                `;
+                                activeListingsList.appendChild(li);
+                            });
+                        }
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('pricing-results').innerHTML = 'An error occurred while fetching the price.';
+                    document.getElementById('pricing-results').innerHTML = '<div class="error">An error occurred while fetching the price. Please try again.</div>';
+                    // Show the results section even if there's an error
+                    document.querySelector('.results-section').style.display = 'block';
                 });
             });
         });

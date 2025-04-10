@@ -21,6 +21,8 @@ from threading import Lock
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from fastapi.middleware.cors import CORSMiddleware
+# Import the get_card_price function from card_pricer.py
+from card_pricer import get_card_price as get_card_price_impl
 
 # Load environment variables
 load_dotenv()
@@ -918,7 +920,7 @@ async def google_auth(request: Request):
         )
 
 @app.post("/api/price")
-async def get_card_price(request: Request, token_info: dict = Depends(verify_token)):
+async def get_card_price_api(request: Request, token_info: dict = Depends(verify_token)):
     try:
         data = await request.json()
         brand = data.get("brand")
@@ -932,20 +934,21 @@ async def get_card_price(request: Request, token_info: dict = Depends(verify_tok
         if not all([brand, set_name, year, condition]):
             raise HTTPException(status_code=400, detail="Missing required fields: brand, set_name, year, and condition are required")
         
-        # Here you would implement your card pricing logic
-        # For now, we'll return a mock response
-        return {
-            "predicted_price": 25.99,
-            "confidence_score": 0.85,
-            "recent_sales": [
-                {"price": 24.99, "condition": condition, "sale_date": "2023-05-01"},
-                {"price": 26.99, "condition": condition, "sale_date": "2023-05-02"}
-            ],
-            "active_listings": [
-                {"price": 27.99, "condition": condition, "listing_type": "Buy It Now"},
-                {"price": 28.99, "condition": condition, "listing_type": "Auction"}
-            ]
-        }
+        # Create a session for the API call
+        async with aiohttp.ClientSession() as session:
+            # Call the implementation from card_pricer.py
+            result = await get_card_price_impl(
+                brand=brand,
+                set_name=set_name,
+                year=year,
+                condition=condition,
+                player_name=player_name,
+                card_number=card_number,
+                card_variation=card_variation,
+                session=session
+            )
+            
+            return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
