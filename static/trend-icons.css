@@ -1,0 +1,103 @@
+/* Trend Icons CSS */
+.trend-icon {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+}
+
+.trend-value {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 500;
+    position: relative;
+    padding-left: 20px;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+/* Trend indicators */
+.trend-value[data-trend="up"]::before {
+    content: '↑';
+    position: absolute;
+    left: 0;
+    color: #2ecc71;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-trend="down"]::before {
+    content: '↓';
+    position: absolute;
+    left: 0;
+    color: #e74c3c;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-trend="stable"]::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #f39c12;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-trend="neutral"]::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #95a5a6;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* Supply level indicators */
+.trend-value[data-supply="high"]::before {
+    content: '↑';
+    position: absolute;
+    left: 0;
+    color: #e74c3c;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-supply="medium"]::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #f39c12;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-supply="low"]::before {
+    content: '↓';
+    position: absolute;
+    left: 0;
+    color: #2ecc71;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.trend-value[data-supply="neutral"]::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #95a5a6;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* Hide the text content of trend values */
+.trend-value {
+    color: transparent !important;
+    text-shadow: none !important;
+}
+
+/* Make sure the icons are visible */
+.trend-value::before {
+    color: inherit !important;
+    text-shadow: none !important;
+    display: inline-block !important;
+} 

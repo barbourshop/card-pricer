@@ -24,13 +24,22 @@ EBAY_DEV_ID = os.getenv("EBAY_DEV_ID")
 EXCLUDED_KEYWORDS = [
     "lot",
     "complete your set",
+    "compete your set",
     "you pick",
+    "you-pick",
+    "you choose",
     "u pick",
     "pick your",
     "complete set",
     "bulk",
     "pick a card",
-    "pick your card"
+    "your pick",
+    "pick from list",
+    "pick from a list",
+    "pyc",
+    "pick your card",
+    "select your card",
+    "choose yours"
 ]
 
 # Add token caching

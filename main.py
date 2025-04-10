@@ -426,17 +426,17 @@ async def get_card_price(
     if condition:
         # Map condition names to eBay condition values
         condition_map = {
-            "New": "NEW",
-            "Like New": "NEW_OTHER",
-            "Excellent": "USED_EXCELLENT",
-            "Very Good": "USED_VERY_GOOD",
-            "Good": "USED_GOOD",
-            "Acceptable": "USED_ACCEPTABLE",
-            "For Parts": "FOR_PARTS",
-            "Ungraded": "UNGRADED",
-            "Graded": "GRADED"
+            "new": "NEW",
+            "like new": "NEW_OTHER",
+            "excellent": "USED_EXCELLENT",
+            "very good": "USED_VERY_GOOD",
+            "good": "USED_GOOD",
+            "acceptable": "USED_ACCEPTABLE",
+            "for parts": "FOR_PARTS",
+            "ungraded": "UNGRADED",
+            "graded": "GRADED"
         }
-        condition_value = condition_map.get(condition)
+        condition_value = condition_map.get(condition.lower())
         if condition_value:
             sold_filter += f",itemCondition:{{{condition_value}}}"
     
@@ -479,7 +479,7 @@ async def get_card_price(
                     
                     # Only include items with the specified condition
                     item_condition = item.get("condition", "Unknown")
-                    if condition is None or item_condition == condition:
+                    if condition is None or item_condition.lower() == condition.lower():
                         sales_data.append({
                             "sale_date": sale_date,
                             "price": float(item["price"]["value"]),
@@ -507,17 +507,17 @@ async def get_card_price(
     if condition:
         # Map condition names to eBay condition values
         condition_map = {
-            "New": "NEW",
-            "Like New": "NEW_OTHER",
-            "Excellent": "USED_EXCELLENT",
-            "Very Good": "USED_VERY_GOOD",
-            "Good": "USED_GOOD",
-            "Acceptable": "USED_ACCEPTABLE",
-            "For Parts": "FOR_PARTS",
-            "Ungraded": "UNGRADED",
-            "Graded": "GRADED"
+            "new": "NEW",
+            "like new": "NEW_OTHER",
+            "excellent": "USED_EXCELLENT",
+            "very good": "USED_VERY_GOOD",
+            "good": "USED_GOOD",
+            "acceptable": "USED_ACCEPTABLE",
+            "for parts": "FOR_PARTS",
+            "ungraded": "UNGRADED",
+            "graded": "GRADED"
         }
-        condition_value = condition_map.get(condition)
+        condition_value = condition_map.get(condition.lower())
         if condition_value:
             active_filter += f",itemCondition:{{{condition_value}}}"
     
@@ -1023,6 +1023,9 @@ async def get_card_price_api(request: Request, token_info: dict = Depends(verify
                 print(f"API response - Confidence score: {result['confidence_score']:.2f}")
                 print(f"API response - Recent sales count: {len(result['recent_sales'])}")
                 print(f"API response - Active listings count: {len(result['active_listings'])}")
+                print(f"API response - Recent sales: {result['recent_sales']}")
+                print(f"API response - Active listings: {result['active_listings']}")
+                print(f"API response - Market analysis: {result['market_analysis']}")
                 
                 # Format the response to match the expected structure
                 return {
