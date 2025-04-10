@@ -66,11 +66,15 @@ class Sale(BaseModel):
     sale_date: str
     price: float
     condition: str
+    title: str
+    url: str
 
 class ActiveListing(BaseModel):
     price: float
     condition: str
     listing_type: str  # "auction" or "buy_it_now"
+    title: str
+    url: str
 
 class CardPriceResponse(BaseModel):
     predicted_price: float
@@ -484,7 +488,8 @@ async def get_card_price(
                             "sale_date": sale_date,
                             "price": float(item["price"]["value"]),
                             "condition": item_condition,
-                            "title": item.get("title", "")  # Add title to the sales data
+                            "title": item.get("title", ""),  # Add title to the sales data
+                            "url": f"https://www.ebay.com/itm/{item.get('itemId', '')}"  # Add eBay item URL
                         })
     
     # Filter out listings with specific keywords
@@ -597,7 +602,8 @@ async def get_card_price(
                         "price": float(item["price"]["value"]),
                         "condition": condition_display,
                         "listing_type": listing_type,
-                        "title": item.get("title", "")  # Add title to the active listings
+                        "title": item.get("title", ""),  # Add title to the active listings
+                        "url": f"https://www.ebay.com/itm/{item.get('itemId', '')}"  # Add eBay item URL
                     })
                     print(f"Added listing to active_listings: {active_listings[-1]}")  # Debug log
             

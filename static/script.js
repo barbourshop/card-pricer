@@ -273,12 +273,14 @@ cardForm.addEventListener('submit', async (e) => {
             console.log('Recent Sales Data:', data.recent_sales);
             if (data.recent_sales && data.recent_sales.length > 0) {
                 data.recent_sales.forEach(sale => {
+                    console.log('Processing recent sale:', sale);
+                    console.log('Sale URL:', sale.url);
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${sale.title || 'N/A'}</td>
+                        <td><a href="${sale.url}" target="_blank" rel="noopener noreferrer">${sale.title || 'N/A'}</a></td>
                         <td>$${sale.price.toFixed(2)}</td>
                         <td>${sale.condition || 'Unknown'}</td>
-                        <td>${new Date(sale.date).toLocaleDateString()}</td>
+                        <td>${new Date(sale.sale_date).toLocaleDateString()}</td>
                     `;
                     row.classList.add('recent-sale-row');
                     recentSalesList.appendChild(row);
@@ -308,9 +310,10 @@ cardForm.addEventListener('submit', async (e) => {
             if (data.active_listings && data.active_listings.length > 0) {
                 data.active_listings.forEach(listing => {
                     console.log('Processing active listing:', listing);
+                    console.log('Listing URL:', listing.url);
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${listing.title || 'N/A'}</td>
+                        <td><a href="${listing.url}" target="_blank" rel="noopener noreferrer">${listing.title || 'N/A'}</a></td>
                         <td>$${listing.price.toFixed(2)}</td>
                         <td>${listing.condition || 'Unknown'}</td>
                         <td>${listing.listing_type || 'N/A'}</td>

@@ -429,12 +429,18 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                         else:
                             print(f"  - KEPT: Exact condition match: {condition_display}")
                     
+                    # Extract just the numeric part of the item ID (between the first and second pipe)
+                    item_id = item.get('itemId', '')
+                    if '|' in item_id:
+                        item_id = item_id.split('|')[1]  # Get the part between the first and second pipe
+                    
                     sales_data.append({
                         'price': price,
                         'date': sale_date,
                         'condition': condition_display,
                         'condition_id': condition_id,
-                        'title': item.get('title', '')
+                        'title': item.get('title', ''),
+                        'url': f"https://www.ebay.com/itm/{item_id}"  # Use the extracted numeric item ID
                     })
                 else:
                     filtered_out.append(("Zero or negative price", price))
@@ -561,12 +567,18 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                             else:
                                 print(f"  - KEPT: Exact condition match: {condition_display}")
                         
+                        # Extract just the numeric part of the item ID (between the first and second pipe)
+                        item_id = item.get('itemId', '')
+                        if '|' in item_id:
+                            item_id = item_id.split('|')[1]  # Get the part between the first and second pipe
+                        
                         # Add the listing to active_listings
                         active_listings.append({
                             "price": float(item["price"]["value"]),
                             "condition": condition_display,
                             "listing_type": listing_type,
-                            "title": item.get("title", "")  # Add title to the active listings
+                            "title": item.get("title", ""),  # Add title to the active listings
+                            "url": f"https://www.ebay.com/itm/{item_id}"  # Use the extracted numeric item ID
                         })
                         print(f"Added listing to active_listings: {active_listings[-1]}")  # Debug log
                 

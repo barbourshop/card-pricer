@@ -559,7 +559,7 @@
                             data.recent_sales.forEach(sale => {
                                 const row = document.createElement('tr');
                                 row.innerHTML = `
-                                    <td>${sale.title || 'N/A'}</td>
+                                    <td><a href="${sale.url}" target="_blank" rel="noopener noreferrer">${sale.title || 'N/A'}</a></td>
                                     <td>$${sale.price.toFixed(2)}</td>
                                     <td>${sale.condition || 'Unknown'}</td>
                                     <td>${new Date(sale.date).toLocaleDateString()}</td>
@@ -600,7 +600,7 @@
                                 console.log('Processing active listing:', listing);
                                 const row = document.createElement('tr');
                                 row.innerHTML = `
-                                    <td>${listing.title || 'N/A'}</td>
+                                    <td><a href="${listing.url}" target="_blank" rel="noopener noreferrer">${listing.title || 'N/A'}</a></td>
                                     <td>$${listing.price.toFixed(2)}</td>
                                     <td>${listing.condition || 'Unknown'}</td>
                                     <td>${listing.listing_type || 'N/A'}</td>
