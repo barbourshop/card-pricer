@@ -1,61 +1,69 @@
 # Card Pricer API
 
-This API helps predict the value of sports cards by analyzing recent eBay sales data.
+A Python application that helps you price sports cards by analyzing recent eBay sales and active listings.
 
-## Setup
+## Features
 
-1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+- Fetches recent sales data from eBay (last 90 days)
+- Analyzes active listings on eBay
+- Filters out irrelevant listings (lots, bulk sales, etc.)
+- Removes price outliers for more accurate pricing
+- Provides market analysis (trends, supply levels)
+- Calculates a predicted price with confidence score
+- Processes multiple cards in parallel for efficiency
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+## Installation
 
-3. Create a `.env` file with your eBay API credentials:
-```
-EBAY_APP_ID=your_app_id
-EBAY_CERT_ID=your_cert_id
-EBAY_DEV_ID=your_dev_id
-```
+1. Clone this repository:
+   ```
+   git clone https://github.com/yourusername/ebay-card-pricer.git
+   cd ebay-card-pricer
+   ```
 
-4. Run the API:
-```bash
-uvicorn main:app --reload
-```
+2. Create a virtual environment and activate it:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-## API Endpoints
+3. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
 
-### GET /card-price
-Query parameters:
-- brand (required): Card brand (e.g., Topps, Upper Deck)
-- set (required): Card set name
-- year (required): Card year
-- player_name (optional): Player name
-- card_number (optional): Card number
-- card_variation (optional): Card variation
+4. Create a `.env` file in the project root with your eBay API credentials:
+   ```
+   EBAY_APP_ID=your_app_id
+   EBAY_CERT_ID=your_cert_id
+   EBAY_DEV_ID=your_dev_id
+   ```
 
-Example request:
-```
-GET /card-price?brand=Topps&set=Chrome&year=2020&player_name=Mike Trout&card_number=1
-```
+## Usage
 
-## Response Format
-```json
-{
-    "predicted_price": 150.25,
-    "confidence_score": 0.85,
-    "recent_sales": [
-        {
-            "sale_date": "2023-10-15",
-            "price": 145.00,
-            "condition": "Near Mint"
-        }
-    ]
-}
+### Processing a Single Card
+
+You can use the `get_card_price` function to get pricing information for a single card:
+
+```python
+import asyncio
+from card_pricer import get_card_price
+
+async def main():
+    result = await get_card_price(
+        brand="Topps",
+        set_name="Series 1",
+        year="2023",
+        player_name="Shohei Ohtani",
+        card_number="100",
+        condition="New"
+    )
+    
+    print(f"Predicted Price: ${result['predicted_price']}")
+    print(f"Confidence Score: {result['confidence_score']}")
+    print(f"Market Trend: {result['market_analysis']['market_trend']}")
+    print(f"Supply Level: {result['market_analysis']['supply_level']}")
+
+asyncio.run(main())
 ```
 
 ## Price Prediction Algorithm
