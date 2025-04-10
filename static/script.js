@@ -77,15 +77,16 @@ cardForm.addEventListener('submit', async (e) => {
     
     const formData = {
         brand: brandInput.value,
-        setName: setNameInput.value,
+        set_name: setNameInput.value,
         year: parseInt(yearInput.value),
         condition: conditionInput.value,
-        playerName: playerNameInput.value,
-        cardNumber: cardNumberInput.value,
-        cardVariation: cardVariationInput.value
+        player_name: playerNameInput.value,
+        card_number: cardNumberInput.value,
+        card_variation: cardVariationInput.value
     };
 
     try {
+        console.log('Sending form data:', formData);
         const response = await fetch('/api/price', {
             method: 'POST',
             headers: {
@@ -99,6 +100,9 @@ cardForm.addEventListener('submit', async (e) => {
         }
 
         const data = await response.json();
+        console.log('API Response:', data);
+        console.log('Recent Sales:', data.recent_sales);
+        console.log('Active Listings:', data.active_listings);
         displayResults(data);
     } catch (error) {
         console.error('Error:', error);
@@ -108,55 +112,157 @@ cardForm.addEventListener('submit', async (e) => {
 
 // Display Results
 function displayResults(data) {
-    resultsSection.classList.remove('hidden');
+    console.log('Displaying results:', data);
     
-    // Update basic information
-    document.getElementById('predicted-price').textContent = `$${data.predictedPrice.toFixed(2)}`;
-    document.getElementById('confidence-score').textContent = `${(data.confidenceScore * 100).toFixed(1)}%`;
+    // Update predicted price and confidence score
+    if (predictedPriceElement) {
+        predictedPriceElement.textContent = `$${data.predicted_price.toFixed(2)}`;
+    }
+    if (confidenceScoreElement) {
+        confidenceScoreElement.textContent = `${(data.confidence_score * 100).toFixed(0)}%`;
+    }
     
     // Update market analysis
-    document.getElementById('market-trend').textContent = data.marketAnalysis.marketTrend;
-    document.getElementById('supply-level').textContent = data.marketAnalysis.supplyLevel;
-    document.getElementById('price-trend').textContent = data.marketAnalysis.priceTrend;
-    document.getElementById('avg-sale-price').textContent = `$${data.marketAnalysis.avgSalePrice.toFixed(2)}`;
-    document.getElementById('avg-active-price').textContent = `$${data.marketAnalysis.avgActivePrice.toFixed(2)}`;
-
+    if (marketTrendElement) {
+        marketTrendElement.textContent = data.market_trend || '-';
+    }
+    if (supplyLevelElement) {
+        supplyLevelElement.textContent = data.supply_level || '-';
+    }
+    if (priceTrendElement) {
+        priceTrendElement.textContent = data.price_trend || '-';
+    }
+    if (avgSalePriceElement) {
+        avgSalePriceElement.textContent = data.average_sale_price ? `$${data.average_sale_price.toFixed(2)}` : '-';
+    }
+    if (avgActivePriceElement) {
+        avgActivePriceElement.textContent = data.average_active_price ? `$${data.average_active_price.toFixed(2)}` : '-';
+    }
+    
     // Update recent sales
     const recentSalesList = document.getElementById('recent-sales-list');
-    recentSalesList.innerHTML = '';
-    data.recentSales.forEach(sale => {
-        const li = document.createElement('li');
-        li.innerHTML = `
-            <div class="title">${sale.title}</div>
-            <div class="details">
-                $${sale.price.toFixed(2)} - ${sale.condition}
-                <br>
-                Sold: ${new Date(sale.saleDate).toLocaleDateString()}
-            </div>
-        `;
-        recentSalesList.appendChild(li);
-    });
-    document.querySelector('.collapsible-section:nth-child(1) .count').textContent = `(${data.recentSales.length})`;
-
+    if (recentSalesList) {
+        recentSalesList.innerHTML = '';  // Clear existing content
+        
+        if (data.recent_sales && data.recent_sales.length > 0) {
+            data.recent_sales.forEach(sale => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${sale.title || 'N/A'}</td>
+                    <td>$${sale.price.toFixed(2)}</td>
+                    <td>${sale.condition || 'Unknown'}</td>
+                    <td>${new Date(sale.date).toLocaleDateString()}</td>
+                `;
+                recentSalesList.appendChild(row);
+            });
+        } else {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4">No recent sales found</td>';
+            recentSalesList.appendChild(row);
+        }
+    }
+    
     // Update active listings
     const activeListingsList = document.getElementById('active-listings-list');
-    activeListingsList.innerHTML = '';
-    data.activeListings.forEach(listing => {
-        const li = document.createElement('li');
-        li.innerHTML = `
-            <div class="title">${listing.title}</div>
-            <div class="details">
-                $${listing.price.toFixed(2)} - ${listing.condition}
-                <br>
-                Type: ${listing.listingType}
-            </div>
-        `;
-        activeListingsList.appendChild(li);
-    });
-    document.querySelector('.collapsible-section:nth-child(2) .count').textContent = `(${data.activeListings.length})`;
-
+    if (activeListingsList) {
+        activeListingsList.innerHTML = '';  // Clear existing content
+        
+        if (data.active_listings && data.active_listings.length > 0) {
+            data.active_listings.forEach(listing => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${listing.title || 'N/A'}</td>
+                    <td>$${listing.price.toFixed(2)}</td>
+                    <td>${listing.condition || 'Unknown'}</td>
+                    <td>${listing.listing_type || 'N/A'}</td>
+                `;
+                activeListingsList.appendChild(row);
+            });
+        } else {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4">No active listings found</td>';
+            activeListingsList.appendChild(row);
+        }
+    }
+    
+    // Update counts
+    const recentSalesCount = document.querySelector('#recent-sales-section .count');
+    const activeListingsCount = document.querySelector('#active-listings-section .count');
+    
+    if (recentSalesCount) {
+        recentSalesCount.textContent = `(${data.recent_sales ? data.recent_sales.length : 0})`;
+    }
+    if (activeListingsCount) {
+        activeListingsCount.textContent = `(${data.active_listings ? data.active_listings.length : 0})`;
+    }
+    
     // Show results section
-    document.querySelector('.results-section').style.display = 'block';
+    const resultsSection = document.querySelector('.results-section');
+    if (resultsSection) {
+        resultsSection.style.display = 'block';
+    }
+    
+    // Initialize collapsible sections
+    initializeCollapsibleSections();
+}
+
+// Initialize collapsible sections
+function initializeCollapsibleSections() {
+    console.log('Initializing collapsible sections');
+    
+    // Initialize recent sales section
+    const recentSalesSection = document.getElementById('recent-sales-section');
+    if (recentSalesSection) {
+        const recentSalesBtn = recentSalesSection.querySelector('.collapsible-btn');
+        const recentSalesContent = recentSalesSection.querySelector('.collapsible-content');
+        const recentSalesArrow = recentSalesSection.querySelector('.arrow');
+        
+        if (recentSalesBtn && recentSalesContent && recentSalesArrow) {
+            // Set initial state
+            recentSalesContent.style.display = 'none';
+            recentSalesBtn.classList.remove('active');
+            recentSalesArrow.textContent = '▶';
+            
+            // Remove existing event listeners by cloning
+            const newRecentSalesBtn = recentSalesBtn.cloneNode(true);
+            recentSalesBtn.parentNode.replaceChild(newRecentSalesBtn, recentSalesBtn);
+            
+            // Add new event listener
+            newRecentSalesBtn.addEventListener('click', () => {
+                const isActive = newRecentSalesBtn.classList.contains('active');
+                newRecentSalesBtn.classList.toggle('active');
+                recentSalesContent.style.display = isActive ? 'none' : 'block';
+                recentSalesArrow.textContent = isActive ? '▶' : '▼';
+            });
+        }
+    }
+    
+    // Initialize active listings section
+    const activeListingsSection = document.getElementById('active-listings-section');
+    if (activeListingsSection) {
+        const activeListingsBtn = activeListingsSection.querySelector('.collapsible-btn');
+        const activeListingsContent = activeListingsSection.querySelector('.collapsible-content');
+        const activeListingsArrow = activeListingsSection.querySelector('.arrow');
+        
+        if (activeListingsBtn && activeListingsContent && activeListingsArrow) {
+            // Set initial state
+            activeListingsContent.style.display = 'none';
+            activeListingsBtn.classList.remove('active');
+            activeListingsArrow.textContent = '▶';
+            
+            // Remove existing event listeners by cloning
+            const newActiveListingsBtn = activeListingsBtn.cloneNode(true);
+            activeListingsBtn.parentNode.replaceChild(newActiveListingsBtn, activeListingsBtn);
+            
+            // Add new event listener
+            newActiveListingsBtn.addEventListener('click', () => {
+                const isActive = newActiveListingsBtn.classList.contains('active');
+                newActiveListingsBtn.classList.toggle('active');
+                activeListingsContent.style.display = isActive ? 'none' : 'block';
+                activeListingsArrow.textContent = isActive ? '▶' : '▼';
+            });
+        }
+    }
 }
 
 // Helper function to update tables

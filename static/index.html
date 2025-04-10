@@ -6,12 +6,59 @@
     <title>eBay Card Pricer</title>
     <link rel="stylesheet" href="/static/styles.css">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        /* Add styles for recent sales and active listings */
+        .recent-sale-row {
+            background-color: #f0f8ff; /* Light blue background for recent sales */
+        }
+        
+        .active-listing-row {
+            background-color: #f0fff0; /* Light green background for active listings */
+        }
+        
+        /* Style for section descriptions */
+        .section-description {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            font-style: italic;
+            color: #666;
+        }
+        
+        #recent-sales-section .section-description {
+            background-color: #e6f3ff;
+            border-left: 4px solid #0066cc;
+        }
+        
+        #active-listings-section .section-description {
+            background-color: #e6ffe6;
+            border-left: 4px solid #009933;
+        }
+        
+        /* Add a note to explain the difference */
+        .data-table::before {
+            content: "Recent Sales: Items that have been sold in the last 90 days";
+            display: block;
+            font-style: italic;
+            margin-bottom: 10px;
+            color: #666;
+        }
+        
+        #active-listings-section .data-table::before {
+            content: "Active Listings: Items currently available for purchase";
+            display: block;
+            font-style: italic;
+            margin-bottom: 10px;
+            color: #666;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>eBay Card Pricer</h1>
             <div id="user-info"></div>
+            <button onclick="signOut()" class="btn-secondary signout-btn">Sign Out</button>
         </header>
 
         <!-- Login Section -->
@@ -112,21 +159,57 @@
                         </div>
                         
                         <div class="sales-data">
-                            <div class="collapsible-section">
-                                <h3>Recent Sales <span class="count"></span></h3>
-                                <ul id="recent-sales-list" class="data-list"></ul>
+                            <div id="recent-sales-section" class="collapsible-section">
+                                <button class="collapsible-btn">
+                                    Recent Sales <span class="count">(0)</span>
+                                    <span class="arrow">▶</span>
+                                </button>
+                                <div class="collapsible-content">
+                                    <div class="section-description">
+                                        <p>Items that have been sold in the last 90 days</p>
+                                    </div>
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Title</th>
+                                                <th>Price</th>
+                                                <th>Condition</th>
+                                                <th>Date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="recent-sales-list">
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                             
-                            <div class="collapsible-section">
-                                <h3>Active Listings <span class="count"></span></h3>
-                                <ul id="active-listings-list" class="data-list"></ul>
+                            <div id="active-listings-section" class="collapsible-section">
+                                <button class="collapsible-btn">
+                                    Active Listings <span class="count">(0)</span>
+                                    <span class="arrow">▶</span>
+                                </button>
+                                <div class="collapsible-content">
+                                    <div class="section-description">
+                                        <p>Items currently available for purchase</p>
+                                    </div>
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Title</th>
+                                                <th>Price</th>
+                                                <th>Condition</th>
+                                                <th>Type</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="active-listings-list">
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <button onclick="signOut()" class="btn-secondary">Sign Out</button>
         </section>
     </div>
 
@@ -156,6 +239,9 @@
                     
                     // Update UI with user info
                     document.getElementById('user-info').textContent = `Logged in as: ${data.user.email}`;
+                    
+                    // Initialize collapsible sections
+                    initializeCollapsibleSections();
                 } else {
                     alert('Login failed: ' + data.error);
                 }
@@ -165,25 +251,42 @@
                 alert('An error occurred during login');
             });
         }
-        
-        function signOut() {
-            // Clear local storage
-            localStorage.removeItem('user');
-            localStorage.removeItem('auth_token');
-            
-            // Show login section and hide main content
-            document.getElementById('login-section').style.display = 'block';
-            document.getElementById('main-content').style.display = 'none';
-            
-            // Clear user info
-            document.getElementById('user-info').textContent = '';
-            
-            // Reload the page to reset Google Sign-In state
-            window.location.reload();
+
+        function initializeCollapsibleSections() {
+            console.log('Initializing collapsible sections');
+            const buttons = document.querySelectorAll('.collapsible-btn');
+            console.log('Found buttons:', buttons.length);
+
+            buttons.forEach(button => {
+                console.log('Setting up button:', button.textContent);
+                const content = button.nextElementSibling;
+                
+                // Set initial state
+                content.style.display = 'none';
+                button.querySelector('.arrow').textContent = '▶';
+                
+                button.onclick = function() {
+                    console.log('Button clicked:', button.textContent);
+                    console.log('Current display:', content.style.display);
+                    
+                    // Toggle display
+                    if (content.style.display === 'none') {
+                        content.style.display = 'block';
+                        button.querySelector('.arrow').textContent = '▼';
+                    } else {
+                        content.style.display = 'none';
+                        button.querySelector('.arrow').textContent = '▶';
+                    }
+                };
+            });
         }
+
+        // Initialize collapsible sections immediately
+        initializeCollapsibleSections();
 
         // Check if user is already logged in
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded');
             const user = localStorage.getItem('user');
             const authToken = localStorage.getItem('auth_token');
             
@@ -192,16 +295,10 @@
                 document.getElementById('login-section').style.display = 'none';
                 document.getElementById('main-content').style.display = 'block';
                 document.getElementById('user-info').textContent = `Logged in as: ${userData.email}`;
+                
+                // Initialize collapsible sections again after login
+                initializeCollapsibleSections();
             }
-            
-            // Handle collapsible sections
-            document.querySelectorAll('.collapsible-btn').forEach(button => {
-                button.addEventListener('click', () => {
-                    const content = button.nextElementSibling;
-                    content.classList.toggle('active');
-                    button.setAttribute('aria-expanded', content.classList.contains('active'));
-                });
-            });
             
             // Add form submission handler
             document.getElementById('pricing-form').addEventListener('submit', function(e) {
@@ -256,88 +353,203 @@
                     return response.json();
                 })
                 .then(data => {
-                    console.log('API Response:', data); // Debug log
-                    if (data) {
-                        // Make sure the results section is visible
-                        document.querySelector('.results-section').style.display = 'block';
-                        
-                        // Reset the pricing results container
+                    console.log('API Response:', data);
+                    console.log('Active Listings:', data.active_listings);
+                    console.log('Active Listings Length:', data.active_listings ? data.active_listings.length : 0);
+                    
+                    // Restore the original structure if it was replaced
+                    if (!document.getElementById('predicted-price')) {
                         document.getElementById('pricing-results').innerHTML = `
                             <div class="price-summary">
                                 <div class="predicted-price">
-                                    <h3>Predicted Price: <span id="predicted-price">$${data.predicted_price.toFixed(2)}</span></h3>
-                                    <p>Confidence Score: <span id="confidence-score">${(data.confidence_score * 100).toFixed(1)}%</span></p>
+                                    <h3>Predicted Price: <span id="predicted-price">$0.00</span></h3>
+                                    <p>Confidence Score: <span id="confidence-score">0%</span></p>
                                 </div>
                                 <div class="market-analysis">
                                     <div class="analysis-item">
                                         <span class="label">Market Trend:</span>
-                                        <span id="market-trend" class="value">${data.market_analysis.market_trend}</span>
+                                        <span id="market-trend" class="value">-</span>
                                     </div>
                                     <div class="analysis-item">
                                         <span class="label">Supply Level:</span>
-                                        <span id="supply-level" class="value">${data.market_analysis.supply_level}</span>
+                                        <span id="supply-level" class="value">-</span>
                                     </div>
                                     <div class="analysis-item">
                                         <span class="label">Price Trend:</span>
-                                        <span id="price-trend" class="value">${data.market_analysis.price_trend}</span>
+                                        <span id="price-trend" class="value">-</span>
                                     </div>
                                     <div class="analysis-item">
                                         <span class="label">Average Sale Price:</span>
-                                        <span id="avg-sale-price" class="value">$${data.market_analysis.avg_sale_price.toFixed(2)}</span>
+                                        <span id="avg-sale-price" class="value">-</span>
                                     </div>
                                     <div class="analysis-item">
                                         <span class="label">Average Active Price:</span>
-                                        <span id="avg-active-price" class="value">$${data.market_analysis.avg_active_price.toFixed(2)}</span>
+                                        <span id="avg-active-price" class="value">-</span>
                                     </div>
                                 </div>
                             </div>
                             
                             <div class="sales-data">
-                                <div class="collapsible-section">
-                                    <h3>Recent Sales <span class="count">(${data.recent_sales.length})</span></h3>
-                                    <ul id="recent-sales-list" class="data-list"></ul>
+                                <div id="recent-sales-section" class="collapsible-section">
+                                    <button class="collapsible-btn">
+                                        Recent Sales <span class="count">(0)</span>
+                                        <span class="arrow">▶</span>
+                                    </button>
+                                    <div class="collapsible-content">
+                                        <div class="section-description">
+                                            <p>Items that have been sold in the last 90 days</p>
+                                        </div>
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Title</th>
+                                                    <th>Price</th>
+                                                    <th>Condition</th>
+                                                    <th>Date</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="recent-sales-list">
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                                 
-                                <div class="collapsible-section">
-                                    <h3>Active Listings <span class="count">(${data.active_listings.length})</span></h3>
-                                    <ul id="active-listings-list" class="data-list"></ul>
+                                <div id="active-listings-section" class="collapsible-section">
+                                    <button class="collapsible-btn">
+                                        Active Listings <span class="count">(0)</span>
+                                        <span class="arrow">▶</span>
+                                    </button>
+                                    <div class="collapsible-content">
+                                        <div class="section-description">
+                                            <p>Items currently available for purchase</p>
+                                        </div>
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Title</th>
+                                                    <th>Price</th>
+                                                    <th>Condition</th>
+                                                    <th>Type</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="active-listings-list">
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         `;
                         
-                        // Update recent sales
-                        const recentSalesList = document.getElementById('recent-sales-list');
-                        if (recentSalesList) {
+                        // Reinitialize collapsible sections
+                        initializeCollapsibleSections();
+                    }
+                    
+                    // Update basic information
+                    const predictedPriceElement = document.getElementById('predicted-price');
+                    const confidenceScoreElement = document.getElementById('confidence-score');
+                    
+                    if (predictedPriceElement) {
+                        predictedPriceElement.textContent = `$${data.predicted_price.toFixed(2)}`;
+                    }
+                    if (confidenceScoreElement) {
+                        confidenceScoreElement.textContent = `${(data.confidence_score * 100).toFixed(1)}%`;
+                    }
+                    
+                    // Update market analysis
+                    const marketTrendElement = document.getElementById('market-trend');
+                    const supplyLevelElement = document.getElementById('supply-level');
+                    const priceTrendElement = document.getElementById('price-trend');
+                    const avgSalePriceElement = document.getElementById('avg-sale-price');
+                    const avgActivePriceElement = document.getElementById('avg-active-price');
+                    
+                    if (marketTrendElement && data.market_analysis) {
+                        marketTrendElement.textContent = data.market_analysis.market_trend || '-';
+                    }
+                    if (supplyLevelElement && data.market_analysis) {
+                        supplyLevelElement.textContent = data.market_analysis.supply_level || '-';
+                    }
+                    if (priceTrendElement && data.market_analysis) {
+                        priceTrendElement.textContent = data.market_analysis.price_trend || '-';
+                    }
+                    if (avgSalePriceElement && data.market_analysis) {
+                        avgSalePriceElement.textContent = data.market_analysis.avg_sale_price ? 
+                            `$${data.market_analysis.avg_sale_price.toFixed(2)}` : '-';
+                    }
+                    if (avgActivePriceElement && data.market_analysis) {
+                        avgActivePriceElement.textContent = data.market_analysis.avg_active_price ? 
+                            `$${data.market_analysis.avg_active_price.toFixed(2)}` : '-';
+                    }
+                    
+                    // Update recent sales
+                    const recentSalesList = document.getElementById('recent-sales-list');
+                    if (recentSalesList) {
+                        recentSalesList.innerHTML = '';
+                        console.log('Recent Sales Data:', data.recent_sales);
+                        if (data.recent_sales && data.recent_sales.length > 0) {
                             data.recent_sales.forEach(sale => {
-                                const li = document.createElement('li');
-                                li.innerHTML = `
-                                    <div class="title">${sale.title}</div>
-                                    <div class="details">
-                                        $${sale.price.toFixed(2)} - ${sale.condition}
-                                        <br>
-                                        Sold: ${new Date(sale.date).toLocaleDateString()}
-                                    </div>
+                                const row = document.createElement('tr');
+                                row.innerHTML = `
+                                    <td>${sale.title || 'N/A'}</td>
+                                    <td>$${sale.price.toFixed(2)}</td>
+                                    <td>${sale.condition || 'Unknown'}</td>
+                                    <td>${new Date(sale.date).toLocaleDateString()}</td>
                                 `;
-                                recentSalesList.appendChild(li);
+                                row.classList.add('recent-sale-row');
+                                recentSalesList.appendChild(row);
                             });
+                        } else {
+                            const row = document.createElement('tr');
+                            row.innerHTML = '<td colspan="4" style="text-align: center;">No recent sales found</td>';
+                            recentSalesList.appendChild(row);
                         }
+                    }
+                    
+                    // Update recent sales count
+                    const recentSalesCount = document.querySelector('#recent-sales-section .count');
+                    if (recentSalesCount) {
+                        recentSalesCount.textContent = `(${data.recent_sales ? data.recent_sales.length : 0})`;
+                    }
+                    
+                    // Update active listings
+                    const activeListingsList = document.getElementById('active-listings-list');
+                    if (activeListingsList) {
+                        activeListingsList.innerHTML = '';
+                        console.log('Active Listings Data:', data.active_listings);
+                        console.log('Active Listings Length:', data.active_listings ? data.active_listings.length : 0);
                         
-                        // Update active listings
-                        const activeListingsList = document.getElementById('active-listings-list');
-                        if (activeListingsList) {
+                        if (data.active_listings && data.active_listings.length > 0) {
                             data.active_listings.forEach(listing => {
-                                const li = document.createElement('li');
-                                li.innerHTML = `
-                                    <div class="title">${listing.title}</div>
-                                    <div class="details">
-                                        $${listing.price.toFixed(2)} - ${listing.condition}
-                                        <br>
-                                        Type: ${listing.listing_type}
-                                    </div>
+                                console.log('Processing active listing:', listing);
+                                const row = document.createElement('tr');
+                                row.innerHTML = `
+                                    <td>${listing.title || 'N/A'}</td>
+                                    <td>$${listing.price.toFixed(2)}</td>
+                                    <td>${listing.condition || 'Unknown'}</td>
+                                    <td>${listing.listing_type || 'N/A'}</td>
                                 `;
-                                activeListingsList.appendChild(li);
+                                row.classList.add('active-listing-row');
+                                activeListingsList.appendChild(row);
                             });
+                        } else {
+                            console.log('No active listings found in the response');
+                            const row = document.createElement('tr');
+                            row.innerHTML = '<td colspan="4" style="text-align: center;">No active listings found</td>';
+                            activeListingsList.appendChild(row);
                         }
+                    } else {
+                        console.error('Active listings list element not found in the DOM');
+                    }
+                    
+                    // Update active listings count
+                    const activeListingsCount = document.querySelector('#active-listings-section .count');
+                    if (activeListingsCount) {
+                        activeListingsCount.textContent = `(${data.active_listings ? data.active_listings.length : 0})`;
+                    }
+                    
+                    // Make sure the results section is visible
+                    const resultsSection = document.querySelector('.results-section');
+                    if (resultsSection) {
+                        resultsSection.style.display = 'block';
                     }
                 })
                 .catch(error => {
@@ -348,6 +560,22 @@
                 });
             });
         });
+
+        function signOut() {
+            // Clear local storage
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_token');
+            
+            // Show login section and hide main content
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('main-content').style.display = 'none';
+            
+            // Clear user info
+            document.getElementById('user-info').textContent = '';
+            
+            // Reload the page to reset Google Sign-In state
+            window.location.reload();
+        }
     </script>
 </body>
 </html> 

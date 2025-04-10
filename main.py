@@ -503,6 +503,24 @@ async def get_card_price(
     # Now get active listings
     active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
     
+    # Add condition filter for active listings if specified
+    if condition:
+        # Map condition names to eBay condition values
+        condition_map = {
+            "New": "NEW",
+            "Like New": "NEW_OTHER",
+            "Excellent": "USED_EXCELLENT",
+            "Very Good": "USED_VERY_GOOD",
+            "Good": "USED_GOOD",
+            "Acceptable": "USED_ACCEPTABLE",
+            "For Parts": "FOR_PARTS",
+            "Ungraded": "UNGRADED",
+            "Graded": "GRADED"
+        }
+        condition_value = condition_map.get(condition)
+        if condition_value:
+            active_filter += f",itemCondition:{{{condition_value}}}"
+    
     active_params = {
         "q": query,
         "filter": active_filter,
@@ -517,13 +535,14 @@ async def get_card_price(
     
     # Make requests to eBay API using aiohttp
     async with aiohttp.ClientSession() as session:
-        async with session.get(sold_url, headers=headers, params=active_params) as response:
+        async with session.get("https://api.ebay.com/buy/browse/v1/item_summary/search", headers=headers, params=active_params) as response:
             if response.status != 200:
                 response_text = await response.text()
                 raise HTTPException(status_code=500, detail=f"Failed to fetch active listings from eBay: {response_text}")
             
             active_data = await response.json()
             print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
+            print(f"Active listings raw data: {active_data}")  # Debug log
             
             # Process active listings data
             active_listings = []
@@ -532,42 +551,84 @@ async def get_card_price(
                     print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
                     listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
                     
-                    # Only include items with the specified condition
-                    item_condition = item.get("condition", "Unknown")
-                    if condition is None or item_condition == condition:
-                        active_listings.append({
-                            "price": float(item["price"]["value"]),
-                            "condition": item_condition,
-                            "listing_type": listing_type,
-                            "title": item.get("title", "")  # Add title to the active listings
-                        })
-    
-    # Filter out listings with specific keywords
-    active_listings = filter_by_title_keywords(active_listings, exclude_keywords=EXCLUDED_KEYWORDS)
-    print(f"Number of active listings after keyword filtering: {len(active_listings)}")  # Debug log
-    
-    # Filter out price outliers from active listings
-    active_listings = filter_price_outliers(active_listings)
-    print(f"Number of active listings after outlier filtering: {len(active_listings)}")  # Debug log
-    
-    # Print remaining active listings
-    print("\nRemaining active listings:")
-    for listing in active_listings:
-        print(f"  {listing.get('title', '')} - ${listing['price']} - {listing['condition']} - {listing['listing_type']}")
-    
-    # Get market analysis
-    market_analysis = analyze_market(sales_data, active_listings)
-    
-    # Predict price
-    predicted_price, confidence = predict_price(sales_data, active_listings)
-    
-    return CardPriceResponse(
-        predicted_price=predicted_price,
-        confidence_score=confidence,
-        recent_sales=[Sale(**sale) for sale in sales_data],
-        active_listings=[ActiveListing(**listing) for listing in active_listings],
-        market_analysis=market_analysis
-    )
+                    # Get condition info with detailed logging
+                    condition_info = item.get("condition", {})
+                    condition_display = 'Unknown'
+                    condition_id = 'Unknown'
+                    
+                    # Handle both dictionary and string condition formats
+                    if isinstance(condition_info, dict):
+                        condition_display = condition_info.get("conditionDisplayName", "Unknown")
+                        condition_id = condition_info.get("conditionId", "Unknown")
+                    elif isinstance(condition_info, str):
+                        condition_display = condition_info
+                        condition_id = condition_info
+                    
+                    print(f"Processing condition for {item.get('title')}:")
+                    print(f"  - Display Name: {condition_display}")
+                    print(f"  - Condition ID: {condition_id}")
+                    
+                    # Filter by condition if specified
+                    if condition:
+                        # Special handling for "Ungraded" and "Graded" conditions
+                        if condition.lower() == "ungraded":
+                            # For "Ungraded", allow any condition that doesn't contain "Graded" or is explicitly "Ungraded"
+                            if "graded" in condition_display.lower() and "ungraded" not in condition_display.lower():
+                                print(f"  - FILTERED: Condition mismatch - Expected: Ungraded, Got: {condition_display}")
+                                continue
+                            # If we get here, the condition is acceptable (either "Ungraded" or any other non-graded condition)
+                            print(f"  - KEPT: Condition acceptable for Ungraded search: {condition_display}")
+                        elif condition.lower() == "graded":
+                            # For "Graded", only allow conditions containing "Graded"
+                            if "graded" not in condition_display.lower():
+                                print(f"  - FILTERED: Condition mismatch - Expected: Graded, Got: {condition_display}")
+                                continue
+                            # If we get here, the condition contains "Graded"
+                            print(f"  - KEPT: Condition acceptable for Graded search: {condition_display}")
+                        # For all other conditions, exact match required
+                        elif condition.lower() != condition_display.lower():
+                            print(f"  - FILTERED: Condition mismatch - Expected: {condition}, Got: {condition_display}")
+                            continue
+                        else:
+                            print(f"  - KEPT: Exact condition match: {condition_display}")
+                    
+                    # Add the listing to active_listings
+                    active_listings.append({
+                        "price": float(item["price"]["value"]),
+                        "condition": condition_display,
+                        "listing_type": listing_type,
+                        "title": item.get("title", "")  # Add title to the active listings
+                    })
+                    print(f"Added listing to active_listings: {active_listings[-1]}")  # Debug log
+            
+            print(f"Total active listings after processing: {len(active_listings)}")
+            
+            # Filter out listings with specific keywords
+            active_listings = filter_by_title_keywords(active_listings, exclude_keywords=EXCLUDED_KEYWORDS)
+            print(f"Number of active listings after keyword filtering: {len(active_listings)}")  # Debug log
+            
+            # Filter out price outliers from active listings
+            active_listings = filter_price_outliers(active_listings)
+            print(f"Number of active listings after outlier filtering: {len(active_listings)}")  # Debug log
+            
+            # Print remaining active listings
+            print("\nRemaining active listings:")
+            for listing in active_listings:
+                print(f"  {listing.get('title', '')} - ${listing['price']} - {listing['condition']} - {listing['listing_type']}")
+            
+            # Get market analysis
+            market_analysis = analyze_market(sales_data, active_listings)
+            
+            # Predict price
+            predicted_price, confidence = predict_price(sales_data, active_listings)
+            
+            return CardPriceResponse(
+                predicted_price=predicted_price,
+                confidence_score=confidence,
+                recent_sales=[Sale(**sale) for sale in sales_data],
+                active_listings=[ActiveListing(**listing) for listing in active_listings],
+                market_analysis=market_analysis
+            )
 
 @app.post("/write-to-sheets", response_model=GoogleSheetsResponse)
 async def write_to_sheets(
@@ -921,7 +982,9 @@ async def google_auth(request: Request):
 
 @app.post("/api/price")
 async def get_card_price_api(request: Request, token_info: dict = Depends(verify_token)):
+    """Get price data for a specific card from eBay."""
     try:
+        # Parse request data
         data = await request.json()
         brand = data.get("brand")
         set_name = data.get("set_name")
@@ -931,26 +994,60 @@ async def get_card_price_api(request: Request, token_info: dict = Depends(verify
         card_variation = data.get("card_variation", "")
         condition = data.get("condition")
         
+        print(f"API request received for: {brand} {set_name} {year} {condition}")
+        
+        # Validate required fields
         if not all([brand, set_name, year, condition]):
-            raise HTTPException(status_code=400, detail="Missing required fields: brand, set_name, year, and condition are required")
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required fields: brand, set_name, year, and condition are required"
+            )
         
         # Create a session for the API call
         async with aiohttp.ClientSession() as session:
-            # Call the implementation from card_pricer.py
-            result = await get_card_price_impl(
-                brand=brand,
-                set_name=set_name,
-                year=year,
-                condition=condition,
-                player_name=player_name,
-                card_number=card_number,
-                card_variation=card_variation,
-                session=session
-            )
-            
-            return result
+            try:
+                # Call the implementation from card_pricer.py
+                result = await get_card_price_impl(
+                    brand=brand,
+                    set_name=set_name,
+                    year=year,
+                    condition=condition,
+                    player_name=player_name,
+                    card_number=card_number,
+                    card_variation=card_variation,
+                    session=session
+                )
+                
+                # Log the result for debugging
+                print(f"API response - Predicted price: ${result['predicted_price']:.2f}")
+                print(f"API response - Confidence score: {result['confidence_score']:.2f}")
+                print(f"API response - Recent sales count: {len(result['recent_sales'])}")
+                print(f"API response - Active listings count: {len(result['active_listings'])}")
+                
+                # Format the response to match the expected structure
+                return {
+                    'predicted_price': result['predicted_price'],
+                    'confidence_score': result['confidence_score'],
+                    'recent_sales': result['recent_sales'],
+                    'active_listings': result['active_listings'],
+                    'market_analysis': result['market_analysis']
+                }
+                
+            except Exception as e:
+                print(f"Error in get_card_price_impl: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error processing card price data: {str(e)}"
+                )
+                
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Unexpected error in get_card_price_api: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 @app.get("/")
 async def read_root():

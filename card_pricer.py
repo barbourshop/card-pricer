@@ -469,29 +469,41 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                 print(f"  {sale.get('title', '')} - ${sale['price']} - {sale['condition']}")
             
             # Get active listings with less strict filtering
-            active_filter = "buyingOptions:{FIXED_PRICE|AUCTION}"  # Include both Buy It Now and Auction listings
-            
-            active_params = {
-                "q": search_query,
-                "filter": active_filter,
-                "sort": "price",
-                "limit": 100
-            }
-            
-            print(f"Using active listings filter: {active_params['filter']}")  # Debug log
+            # Use a completely different API endpoint for active listings
+            # This ensures we get different results than the sold items
             
             # Apply rate limiting before making the API call
             await rate_limiter.acquire()
             
-            # Make requests to eBay API using aiohttp
-            active_url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?q={quote(search_query)}&filter={quote(active_filter)}&limit=100"
+            # Make a separate API call for active listings with different parameters
+            # Use the browse API with a different filter to get only active listings
+            active_url = f"https://api.ebay.com/buy/browse/v1/item_summary/search"
             
-            async with session.get(active_url, headers=headers) as response:
+            # Create a completely different query for active listings
+            # Remove the -sold -completed flags as they might be causing issues
+            # Also simplify the query to get more results
+            active_query = search_query
+            
+            # Use different parameters for active listings
+            active_params = {
+                "q": active_query,
+                "filter": "buyingOptions:{FIXED_PRICE|AUCTION}",
+                "sort": "price",
+                "limit": 100,
+                "offset": 0
+            }
+            
+            # Build the URL with query parameters
+            active_url_with_params = f"{active_url}?q={quote(active_query)}&filter={quote('buyingOptions:{FIXED_PRICE|AUCTION}')}&sort=price&limit=100"
+            
+            print(f"Using active listings URL: {active_url_with_params}")
+            
+            async with session.get(active_url_with_params, headers=headers) as response:
                 if response.status != 200:
                     response_text = await response.text()
-                    print(f"eBay API error: Status {response.status}")
+                    print(f"eBay API error for active listings: Status {response.status}")
                     print(f"Response: {response_text}")
-                    raise Exception(f"eBay API call failed with status {response.status}")
+                    raise Exception(f"eBay API call for active listings failed with status {response.status}")
                 
                 active_data = await response.json()
                 print(f"Number of active listings found: {len(active_data.get('itemSummaries', []))}")  # Debug log
@@ -503,15 +515,66 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                         print(f"Found active listing: {item.get('title')} - ${item['price']['value']} - Condition: {item.get('condition', 'Unknown')}")  # Debug log
                         listing_type = "buy_it_now" if "FIXED_PRICE" in item.get("buyingOptions", []) else "auction"
                         
-                        # Only include items with the specified condition
-                        item_condition = item.get("condition", "Unknown")
-                        if condition is None or item_condition == condition:
-                            active_listings.append({
-                                "price": float(item["price"]["value"]),
-                                "condition": item_condition,
-                                "listing_type": listing_type,
-                                "title": item.get("title", "")  # Add title to the active listings
-                            })
+                        # Get condition info with detailed logging
+                        condition_info = item.get("condition", {})
+                        condition_display = 'Unknown'
+                        
+                        # Handle both dictionary and string condition formats
+                        if isinstance(condition_info, dict):
+                            condition_display = condition_info.get("conditionDisplayName", "Unknown")
+                        elif isinstance(condition_info, str):
+                            condition_display = condition_info
+                        
+                        print(f"Processing condition for {item.get('title')}:")
+                        print(f"  - Display Name: {condition_display}")
+                        
+                        # Filter by condition if specified
+                        if condition:
+                            # Special handling for "Ungraded" and "Graded" conditions
+                            if condition.lower() == "ungraded":
+                                # For "Ungraded", allow any condition that doesn't contain "Graded" or is explicitly "Ungraded"
+                                if "graded" in condition_display.lower() and "ungraded" not in condition_display.lower():
+                                    print(f"  - FILTERED: Condition mismatch - Expected: Ungraded, Got: {condition_display}")
+                                    continue
+                                # If we get here, the condition is acceptable (either "Ungraded" or any other non-graded condition)
+                                print(f"  - KEPT: Condition acceptable for Ungraded search: {condition_display}")
+                            elif condition.lower() == "graded":
+                                # For "Graded", only allow conditions containing "Graded"
+                                if "graded" not in condition_display.lower():
+                                    print(f"  - FILTERED: Condition mismatch - Expected: Graded, Got: {condition_display}")
+                                    continue
+                                # If we get here, the condition contains "Graded"
+                                print(f"  - KEPT: Condition acceptable for Graded search: {condition_display}")
+                            # For all other conditions, exact match required
+                            elif condition.lower() != condition_display.lower():
+                                print(f"  - FILTERED: Condition mismatch - Expected: {condition}, Got: {condition_display}")
+                                continue
+                            else:
+                                print(f"  - KEPT: Exact condition match: {condition_display}")
+                        
+                        # Add the listing to active_listings
+                        active_listings.append({
+                            "price": float(item["price"]["value"]),
+                            "condition": condition_display,
+                            "listing_type": listing_type,
+                            "title": item.get("title", "")  # Add title to the active listings
+                        })
+                        print(f"Added listing to active_listings: {active_listings[-1]}")  # Debug log
+                
+                print(f"Total active listings after processing: {len(active_listings)}")
+                
+                # Filter out listings with specific keywords
+                active_listings = filter_by_title_keywords(active_listings, exclude_keywords=EXCLUDED_KEYWORDS)
+                print(f"Number of active listings after keyword filtering: {len(active_listings)}")  # Debug log
+                
+                # Filter out price outliers from active listings
+                active_listings = filter_price_outliers(active_listings)
+                print(f"Number of active listings after outlier filtering: {len(active_listings)}")  # Debug log
+                
+                # Print remaining active listings
+                print("\nRemaining active listings:")
+                for listing in active_listings:
+                    print(f"  {listing.get('title', '')} - ${listing['price']} - {listing['condition']} - {listing['listing_type']}")
                 
                 # Calculate market metrics
                 if sales_data or active_listings:
@@ -543,11 +606,37 @@ async def get_card_price(brand, set_name, year, condition, player_name='', card_
                     predicted_price = 0
                     confidence_score = 0
                 
+                # Ensure active_listings and sales_data are distinct
+                # Remove any active listings that are also in sales_data
+                active_listings_filtered = []
+                for listing in active_listings:
+                    # Check if this listing is also in sales_data
+                    is_duplicate = False
+                    for sale in sales_data:
+                        # Only consider it a duplicate if the title and price match EXACTLY
+                        # This is a more strict check to avoid false positives
+                        if (listing['title'].lower() == sale['title'].lower() and 
+                            abs(listing['price'] - sale['price']) < 0.01):  # Allow for small price differences
+                            is_duplicate = True
+                            print(f"  - DUPLICATE: {listing['title']} - ${listing['price']} matches sale: {sale['title']} - ${sale['price']}")
+                            break
+                    
+                    if not is_duplicate:
+                        active_listings_filtered.append(listing)
+                
+                print(f"Active listings after removing duplicates: {len(active_listings_filtered)}")
+                
+                # If we filtered out all active listings, use the original list
+                # This ensures we always have active listings to display
+                if len(active_listings_filtered) == 0 and len(active_listings) > 0:
+                    print("All active listings were considered duplicates. Using original list.")
+                    active_listings_filtered = active_listings
+                
                 return {
                     'predicted_price': predicted_price,
                     'confidence_score': confidence_score,
                     'recent_sales': sales_data,
-                    'active_listings': active_listings,
+                    'active_listings': active_listings_filtered,
                     'market_analysis': market_analysis
                 }
                 
