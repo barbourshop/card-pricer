@@ -1,4 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Form, Header, Request
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import requests
@@ -12,11 +15,32 @@ import time
 from asyncio import Semaphore
 import aiohttp
 import base64
+from auth import get_current_user, get_google_auth_url, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+import httpx
+from threading import Lock
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="eBay Card Pricer API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Google OAuth settings
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 # eBay API credentials
 EBAY_APP_ID = os.getenv("EBAY_APP_ID")
@@ -63,16 +87,20 @@ class CSVResponse(BaseModel):
     message: str
     file_path: str
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
 # Add token caching
 _oauth_token = None
 _token_expiry = None
-_token_lock = asyncio.Lock()
+_token_lock = Lock()
 
 async def get_ebay_oauth_token():
     """Get eBay OAuth token with caching"""
     global _oauth_token, _token_expiry
     
-    async with _token_lock:
+    with _token_lock:
         # Check if we have a valid cached token
         if _oauth_token and _token_expiry and datetime.now() < _token_expiry:
             return _oauth_token
@@ -300,6 +328,61 @@ def filter_by_title_keywords(items: List[dict], title_key: str = "title", exclud
     
     return filtered_items
 
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """This endpoint is used by the OAuth2PasswordBearer for token validation"""
+    # In a real application, you would validate the username/password here
+    # For this example, we'll just create a token for any valid request
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": form_data.username},
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/login/google")
+async def login_google():
+    """Redirect to Google OAuth login page"""
+    return {"auth_url": get_google_auth_url()}
+
+@app.get("/auth/callback")
+async def auth_callback(code: str):
+    """Handle Google OAuth callback"""
+    async with httpx.AsyncClient() as client:
+        # Exchange code for tokens
+        token_url = "https://oauth2.googleapis.com/token"
+        data = {
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
+        }
+        response = await client.post(token_url, data=data)
+        tokens = response.json()
+        
+        if "error" in tokens:
+            raise HTTPException(status_code=400, detail=tokens["error"])
+        
+        # Get user info
+        userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+        response = await client.get(userinfo_url, headers=headers)
+        user_info = response.json()
+        
+        # Create access token
+        access_token = create_access_token(
+            data={"sub": user_info["email"]},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/test-auth")
+async def test_auth(current_user: str = Depends(get_current_user)):
+    """Test endpoint to verify authentication"""
+    return {"message": f"Hello {current_user}!"}
+
 @app.get("/card-price", response_model=CardPriceResponse)
 async def get_card_price(
     brand: str,
@@ -308,7 +391,8 @@ async def get_card_price(
     condition: Optional[str] = None,
     player_name: Optional[str] = None,
     card_number: Optional[str] = None,
-    card_variation: Optional[str] = None
+    card_variation: Optional[str] = None,
+    current_user: str = Depends(get_current_user)
 ):
     """Get predicted price for a sports card based on recent eBay sales and active listings"""
     
@@ -491,7 +575,8 @@ async def write_to_sheets(
     condition: Optional[str] = None,
     player_name: Optional[str] = None,
     card_number: Optional[str] = None,
-    card_variation: Optional[str] = None
+    card_variation: Optional[str] = None,
+    current_user: str = Depends(get_current_user)
 ):
     try:
         # Get card price data
@@ -554,7 +639,8 @@ async def write_to_csv(
     condition: Optional[str] = None,
     player_name: Optional[str] = None,
     card_number: Optional[str] = None,
-    card_variation: Optional[str] = None
+    card_variation: Optional[str] = None,
+    current_user: str = Depends(get_current_user)
 ):
     try:
         # Get card price data
@@ -736,7 +822,8 @@ async def process_cards_from_csv(
 async def process_cards_parallel(
     input_csv_path: str,
     output_csv_path: str = 'card_prices.csv',
-    max_concurrent: int = 5
+    max_concurrent: int = 5,
+    current_user: str = Depends(get_current_user)
 ):
     """
     Process multiple cards from an input CSV file in parallel and write results to an output CSV file.
@@ -757,3 +844,111 @@ async def process_cards_parallel(
             status_code=500,
             detail=f"Failed to process cards: {str(e)}"
         )
+
+# Add a function to verify Google ID tokens
+async def verify_google_token(token: str):
+    """Verify a Google ID token and return the user info"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return None
+        except Exception as e:
+            print(f"Error verifying token: {str(e)}")
+            return None
+
+# Add token verification function
+async def verify_token(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = authorization.split(" ")[1]
+    try:
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
+        return idinfo
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    return response
+
+@app.post("/auth/google")
+async def google_auth(request: Request):
+    try:
+        data = await request.json()
+        id_token_str = data.get("id_token")
+        
+        if not id_token_str:
+            raise HTTPException(status_code=400, detail="ID token is required")
+        
+        # Verify the token
+        idinfo = id_token.verify_oauth2_token(
+            id_token_str, 
+            requests.Request(), 
+            GOOGLE_CLIENT_ID
+        )
+        
+        # Get user info
+        user = {
+            "email": idinfo["email"],
+            "name": idinfo.get("name", ""),
+            "picture": idinfo.get("picture", "")
+        }
+        
+        return JSONResponse({
+            "success": True,
+            "user": user
+        })
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )
+
+@app.post("/api/price")
+async def get_card_price(request: Request, token_info: dict = Depends(verify_token)):
+    try:
+        data = await request.json()
+        brand = data.get("brand")
+        set_name = data.get("set_name")
+        year = data.get("year")
+        player_name = data.get("player_name", "")
+        card_number = data.get("card_number", "")
+        card_variation = data.get("card_variation", "")
+        condition = data.get("condition")
+        
+        if not all([brand, set_name, year, condition]):
+            raise HTTPException(status_code=400, detail="Missing required fields: brand, set_name, year, and condition are required")
+        
+        # Here you would implement your card pricing logic
+        # For now, we'll return a mock response
+        return {
+            "predicted_price": 25.99,
+            "confidence_score": 0.85,
+            "recent_sales": [
+                {"price": 24.99, "condition": condition, "sale_date": "2023-05-01"},
+                {"price": 26.99, "condition": condition, "sale_date": "2023-05-02"}
+            ],
+            "active_listings": [
+                {"price": 27.99, "condition": condition, "listing_type": "Buy It Now"},
+                {"price": 28.99, "condition": condition, "listing_type": "Auction"}
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")

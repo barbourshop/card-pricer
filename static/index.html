@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eBay Card Pricer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>eBay Card Pricer</h1>
+            <div id="user-info"></div>
+        </header>
+
+        <!-- Login Section -->
+        <section id="login-section">
+            <div class="login-container">
+                <h2>Sign in to continue</h2>
+                <div id="g_id_onload"
+                     data-client_id="209283856607-pjsulss4dthq0oo6f192bd3bc02tcn9t.apps.googleusercontent.com"
+                     data-callback="onSignIn">
+                </div>
+                <div class="g_id_signin"
+                     data-type="standard"
+                     data-size="large"
+                     data-theme="outline"
+                     data-text="sign_in_with"
+                     data-shape="rectangular"
+                     data-logo_alignment="left">
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Section (hidden by default) -->
+        <section id="main-content" style="display: none;">
+            <div class="card-pricing-form">
+                <h2>Card Pricing Form</h2>
+                <form id="pricing-form">
+                    <div class="form-group">
+                        <label for="brand">Brand:</label>
+                        <input type="text" id="brand" name="brand" required placeholder="e.g., Topps, Upper Deck">
+                    </div>
+                    <div class="form-group">
+                        <label for="set_name">Set Name:</label>
+                        <input type="text" id="set_name" name="set_name" required placeholder="e.g., Chrome, Series 1">
+                    </div>
+                    <div class="form-group">
+                        <label for="year">Year:</label>
+                        <input type="text" id="year" name="year" required placeholder="e.g., 2023">
+                    </div>
+                    <div class="form-group">
+                        <label for="player_name">Player Name:</label>
+                        <input type="text" id="player_name" name="player_name" placeholder="e.g., Mike Trout">
+                    </div>
+                    <div class="form-group">
+                        <label for="card_number">Card Number:</label>
+                        <input type="text" id="card_number" name="card_number" placeholder="e.g., 123">
+                    </div>
+                    <div class="form-group">
+                        <label for="card_variation">Card Variation:</label>
+                        <input type="text" id="card_variation" name="card_variation" placeholder="e.g., Refractor, Auto">
+                    </div>
+                    <div class="form-group">
+                        <label for="condition">Condition:</label>
+                        <select id="condition" name="condition" required>
+                            <option value="">Select condition</option>
+                            <option value="mint">Mint</option>
+                            <option value="near-mint">Near Mint</option>
+                            <option value="excellent">Excellent</option>
+                            <option value="good">Good</option>
+                            <option value="light-played">Light Played</option>
+                            <option value="played">Played</option>
+                            <option value="poor">Poor</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-primary">Get Price</button>
+                </form>
+            </div>
+
+            <div class="results-section" style="display: none;">
+                <h2>Pricing Results</h2>
+                <div id="pricing-results"></div>
+            </div>
+
+            <button onclick="signOut()" class="btn-secondary">Sign Out</button>
+        </section>
+    </div>
+
+    <script>
+        function onSignIn(googleUser) {
+            // Get the ID token
+            const idToken = googleUser.credential;
+            
+            // Send the token to your backend
+            fetch('/auth/google', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id_token: idToken })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Hide login section and show main content
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'block';
+                    
+                    // Store user info and token
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    localStorage.setItem('auth_token', idToken);
+                    
+                    // Update UI with user info
+                    document.getElementById('user-info').textContent = `Logged in as: ${data.user.email}`;
+                } else {
+                    alert('Login failed: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred during login');
+            });
+        }
+        
+        function signOut() {
+            // Clear local storage
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_token');
+            
+            // Show login section and hide main content
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('main-content').style.display = 'none';
+            
+            // Clear user info
+            document.getElementById('user-info').textContent = '';
+            
+            // Reload the page to reset Google Sign-In state
+            window.location.reload();
+        }
+
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', function() {
+            const user = localStorage.getItem('user');
+            const authToken = localStorage.getItem('auth_token');
+            
+            if (user && authToken) {
+                const userData = JSON.parse(user);
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                document.getElementById('user-info').textContent = `Logged in as: ${userData.email}`;
+            }
+            
+            // Add form submission handler
+            document.getElementById('pricing-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Get form values
+                const brand = document.getElementById('brand').value;
+                const set_name = document.getElementById('set_name').value;
+                const year = document.getElementById('year').value;
+                const player_name = document.getElementById('player_name').value;
+                const card_number = document.getElementById('card_number').value;
+                const card_variation = document.getElementById('card_variation').value;
+                const condition = document.getElementById('condition').value;
+                
+                // Get auth token
+                const authToken = localStorage.getItem('auth_token');
+                
+                if (!authToken) {
+                    alert('Please sign in to get card prices');
+                    return;
+                }
+                
+                // Show loading state
+                document.getElementById('pricing-results').innerHTML = 'Loading...';
+                document.querySelector('.results-section').style.display = 'block';
+                
+                // Make API request
+                fetch('/api/price', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        brand: brand,
+                        set_name: set_name,
+                        year: year,
+                        player_name: player_name,
+                        card_number: card_number,
+                        card_variation: card_variation,
+                        condition: condition
+                    })
+                })
+                .then(response => {
+                    if (response.status === 401) {
+                        // Token expired or invalid
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('user');
+                        window.location.reload();
+                        return;
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data) {
+                        // Display results
+                        document.getElementById('pricing-results').innerHTML = `
+                            <div class="price-result">
+                                <h3>Predicted Price: $${data.predicted_price.toFixed(2)}</h3>
+                                <p>Confidence Score: ${(data.confidence_score * 100).toFixed(1)}%</p>
+                                <h4>Recent Sales:</h4>
+                                <ul>
+                                    ${data.recent_sales.map(sale => `
+                                        <li>$${sale.price.toFixed(2)} - ${sale.condition} (${new Date(sale.sale_date).toLocaleDateString()})</li>
+                                    `).join('')}
+                                </ul>
+                                <h4>Active Listings:</h4>
+                                <ul>
+                                    ${data.active_listings.map(listing => `
+                                        <li>$${listing.price.toFixed(2)} - ${listing.condition} (${listing.listing_type})</li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('pricing-results').innerHTML = 'An error occurred while fetching the price.';
+                });
+            });
+        });
+    </script>
+</body>
+</html> 
